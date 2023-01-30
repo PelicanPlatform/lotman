@@ -1,0 +1,2 @@
+#define Lotman_VERSION_MAJOR @Lotman_VERSION_MAJOR@
+#define Lotman_VERSION_MINOR @Lotman_VERSION_MINOR@
