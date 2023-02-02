@@ -15,11 +15,20 @@ const char * lotman_version() {
 }
 
     
-int lotman_initialize_root(const char *path, const char *owner, const char *users, const char *resource_limits, const char *reclamation_policy, char **err_msg) {
+int lotman_initialize_root(const char *name, const char *path, const char *owner, const char *resource_limits, const char *reclamation_policy, char **err_msg) {
     if (!path) {
         if (err_msg) {*err_msg = strdup("The path for the root lot must not be a null pointer");}
         return -1;
     }
+    // If the provided name is a nullpointer, use the path as a name
+    const char *real_name;
+    if (!name) {
+        real_name = path;
+    }
+    else if (name) {
+        real_name = name;
+    }
+    
     if (!owner) {
         if (err_msg) {*err_msg = strdup("The owner for the root lot must not be a null pointer");}
         return -1;
@@ -33,11 +42,8 @@ int lotman_initialize_root(const char *path, const char *owner, const char *user
         return -1;
     }
 
-    // DONE: TODO: Assert that lot isn't already initialized at path
-    // DONE: TODO: Assert that there is no root lot up/downstream
-
     try {
-        if (!lotman::Lot::initialize_root(path, owner, users, resource_limits, reclamation_policy)) {
+        if (!lotman::Lot::initialize_root(name, path, owner, resource_limits, reclamation_policy)) {
             if (err_msg) {*err_msg = strdup("Failed to initialize the root lot.");}
             return -1;
         }
@@ -50,11 +56,20 @@ int lotman_initialize_root(const char *path, const char *owner, const char *user
 }
 
 
-int lotman_add_sublot(const char *path, const char *owner, const char *users, const char *resource_limits, const char *reclamation_policy, char **err_msg) {
+int lotman_add_sublot(const char *name, const char *path, const char *parent, const char *owner, const char *resource_limits, const char *reclamation_policy, char **err_msg) {
     if (!path) {
         if (err_msg) {*err_msg = strdup("The path for the lot must not be a null pointer");}
         return -1;
     }
+    // If the provided name is a nullpointer, use the path as a name
+    const char *real_name;
+    if (!name) {
+        real_name = path;
+    }
+    else if (name) {
+        real_name = name;
+    }
+
     if (!owner) {
         if (err_msg) {*err_msg = strdup("The owner for the root lot must not be a null pointer");}
         return -1;
@@ -68,11 +83,8 @@ int lotman_add_sublot(const char *path, const char *owner, const char *users, co
         return -1;
     }
 
-    // DONE: TODO: Generate parent_path from path
-    // TODO: Confirm that sublot params don't violate parent lot params
-
     try {
-        if (!lotman::Lot::add_sublot(path, owner, users, resource_limits, reclamation_policy)) {
+        if (!lotman::Lot::add_sublot(real_name, path, parent, owner, resource_limits, reclamation_policy)) {
             if (err_msg) {*err_msg = strdup("Failed to add sublot.");}
             return -1;
         }
@@ -86,16 +98,16 @@ int lotman_add_sublot(const char *path, const char *owner, const char *users, co
 }
 
 
-int lotman_remove_sublot(const char *path, char **err_msg) {
-    if (!path) {
-        if (err_msg) {*err_msg = strdup("Path for lot to be removed must not be nullpointer.");}
+int lotman_remove_sublot(const char *name, char **err_msg) {
+    if (!name) {
+        if (err_msg) {*err_msg = strdup("Name for lot to be removed must not be nullpointer.");}
         return -1;
     }
 
     try {
-        if (!lotman::Lot::remove_sublot(path)) {
+        if (!lotman::Lot::remove_sublot(name)) {
             if (err_msg) {*err_msg = strdup("Failed to remove lot");}
-            std::cout << &err_msg << std::endl;
+            std::cout << "err message: " << *err_msg << std::endl;
             return -1;
         }
     }

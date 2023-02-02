@@ -27,7 +27,7 @@ namespace {
         char *err_msg = nullptr;
         rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS lot ("
                             "lot_name PRIMARY KEY NOT NULL,"
-                            "path,"
+                            "path UNIQUE NOT NULL,"
                             "parent,"
                             "owner NOT NULL,"
                             "resource_limits,"
@@ -66,7 +66,7 @@ namespace {
     }
 }
 
-bool lotman::Lot::store_lot(std::string path, std::string parent, std::string owner, std::string users, picojson::value resource_limits, picojson::value reclamation_policy) {
+bool lotman::Lot::store_lot(std::string name, std::string path, std::string parent, std::string owner, picojson::value resource_limits, picojson::value reclamation_policy) {
     //picojson::object resource_limits_object;
     //picojson::object reclamation_policy_object;
     //resource_limits_object["resource_limits"] = resource_limits;
@@ -77,7 +77,6 @@ bool lotman::Lot::store_lot(std::string path, std::string parent, std::string ow
     std::string reclamation_policy_json_str = reclamation_policy_value.serialize();
     
     auto lot_fname = get_lot_file();
-    if (lot_fname.size() == 0) {return false;}
 
     sqlite3 *db;
     int rc = sqlite3_open(lot_fname.c_str(), &db);
@@ -94,25 +93,25 @@ bool lotman::Lot::store_lot(std::string path, std::string parent, std::string ow
     }
 
     // Bind inputs to sql statement
-    if (sqlite3_bind_text(stmt, 1, path.c_str(), path.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, name.c_str(), name.size(), SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
 
-    if (sqlite3_bind_text(stmt, 2, parent.c_str(), parent.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 2, path.c_str(), path.size(), SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
 
-    if (sqlite3_bind_text(stmt, 3, owner.c_str(), owner.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 3, parent.c_str(), parent.size(), SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
 
-    if (sqlite3_bind_text(stmt, 4, users.c_str(), users.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 4, owner.c_str(), owner.size(), SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
@@ -149,7 +148,8 @@ bool lotman::Lot::store_lot(std::string path, std::string parent, std::string ow
     return true;
 }
 
-bool lotman::Lot::remove_lot(std::string path) {
+
+bool lotman::Lot::remove_lot(std::string name) {
     auto lot_fname = get_lot_file();
     if (lot_fname.size() == 0) {return false;}
 
@@ -161,13 +161,13 @@ bool lotman::Lot::remove_lot(std::string path) {
     }
 
     sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, "DELETE FROM lot WHERE path = ?;", -1, &stmt, NULL);
+    rc = sqlite3_prepare_v2(db, "DELETE FROM lot WHERE lot_name = ?;", -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
         return false;
     }
 
-    if (sqlite3_bind_text(stmt, 1, path.c_str(), path.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, name.c_str(), name.size(), SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
@@ -188,42 +188,6 @@ bool lotman::Lot::remove_lot(std::string path) {
     return true;
 }
 
-bool lotman::Validator::SQL_match_exists(std::string query) {
-    auto lot_fname = get_lot_file();
-    if (lot_fname.size() == 0) {return false;}
-
-    sqlite3 *db;
-    int rc = sqlite3_open(lot_fname.c_str(), &db);
-    if (rc) {
-        sqlite3_close(db);
-        return false;
-    }
-
-    sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        sqlite3_close(db);
-        return false;
-    }
-
-    rc = sqlite3_step(stmt);
-    if (rc == SQLITE_ROW) {
-        //int err = sqlite3_extended_errcode(db);
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return true;
-    }
-    else if (rc == SQLITE_DONE) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return false;
-    }
-    else {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return false;
-    }
-}
 
 std::vector<std::string> lotman::Validator::SQL_get_matches(std::string query) {
     std::vector<std::string> data_vec;

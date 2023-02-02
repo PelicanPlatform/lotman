@@ -24,15 +24,15 @@ class Lot {
     friend class lotman::Validator;
     public:
         Lot() {}
-        static bool initialize_root(std::string lot_path, std::string owner, std::string users, std::string resource_limits_str, std::string reclamation_policy_str); 
-        static bool add_sublot(std::string lot_path, std::string owner, std::string users, std::string resource_limits_str, std::string reclamation_policy_str);
+        static bool initialize_root(std::string lot_name, std::string lot_path, std::string owner, std::string resource_limits_str, std::string reclamation_policy_str); 
+        static bool add_sublot(std::string lot_name, std::string lot_path, std::string parent, std::string owner, std::string resource_limits_str, std::string reclamation_policy_str);
         static bool remove_sublot(std::string lot_path);
-        static std::string get_parent_lot_path(std::string lot_path, bool get_root=false);
-        static std::vector<std::string> get_sublot_paths(std::string lot_path, bool recursive=false); // TODO: setting recursive to true gets ALL sublot paths of the supplied lot_path
+        static std::string get_parent_lot_name(std::string lot_name, bool get_root=false);
+        //static std::vector<std::string> get_sublot_paths(std::string lot_path, bool recursive=false); // TODO: setting recursive to true gets ALL sublot paths of the supplied lot_path
     
     private:
-        static bool store_lot(std::string lot_path, std::string parent, std::string owner, std::string users, picojson::value resource_limits, picojson::value reclamation_policy);
-        static bool remove_lot(std::string lot_path);
+        static bool store_lot(std::string lot_name, std::string lot_path, std::string parent, std::string owner, picojson::value resource_limits, picojson::value reclamation_policy);
+        static bool remove_lot(std::string lot_name);
 
 };
 
@@ -46,9 +46,9 @@ class Validator {
     public:
         Validator();
         
-        static bool check_for_parent_child_dirs(std::string lot_path);
-        static std::vector<std::string> get_parent_dirs(std::string lot_path, bool get_root=false);
-        static std::vector<std::string> get_child_dirs(std::string lot_path, bool recursive=false);
+        //static bool check_for_parent_child_dirs(std::string lot_path);
+        static std::vector<std::string> get_parent_names(std::string lot_path, bool get_root=false);
+        //static std::vector<std::string> get_child_dirs(std::string lot_path, bool recursive=false);
 
     private:
         static bool SQL_match_exists(std::string query);
