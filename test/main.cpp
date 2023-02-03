@@ -58,8 +58,8 @@ namespace {
         auto rv = lotman_add_sublot(name, path, parent, owner, reclamation_policy, resource_limits, &err_msg);
         ASSERT_TRUE(rv == 0);
 
-        rv = lotman_remove_sublot(name, &err_msg);
-        ASSERT_TRUE(rv == 0);
+        //rv = lotman_remove_sublot(name, &err_msg);
+        //ASSERT_TRUE(rv == 0);
     }
 
     // TEST(LotManTest, AddInvalidSublot) {

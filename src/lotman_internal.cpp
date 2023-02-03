@@ -5,7 +5,7 @@
 
 #include "lotman_internal.h"
 
-//using namespace lotman;
+using namespace lotman;
 
 
 /**

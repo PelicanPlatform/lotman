@@ -31,8 +31,8 @@ class Lot {
         //static std::vector<std::string> get_sublot_paths(std::string lot_path, bool recursive=false); // TODO: setting recursive to true gets ALL sublot paths of the supplied lot_path
     
     private:
-        static bool store_lot(std::string lot_name, std::string lot_path, std::string parent, std::string owner, picojson::value resource_limits, picojson::value reclamation_policy);
-        static bool remove_lot(std::string lot_name);
+        static bool store_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::value paths, picojson::value management_policy_attrs);
+        //static bool remove_lot(std::string lot_name);
 
 };
 
@@ -57,4 +57,4 @@ class Validator {
 };
 
 
-}
+} // namespace lotman
