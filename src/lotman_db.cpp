@@ -113,11 +113,11 @@ std::string get_lot_file() {
 }
 } //namespace
 
-bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::value paths, picojson::value management_policy_attrs) {
+bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::array paths, picojson::value management_policy_attrs) {
     // Get the lot db and open it
     auto lot_fname = get_lot_file();
 
-    std::cout << "HERE 1" << std::endl;
+    std::cout << "HERE 1, in db" << std::endl;
     sqlite3 *db;
     int rc = sqlite3_open(lot_fname.c_str(), &db);
     if (rc) {
@@ -157,8 +157,11 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
         rc = sqlite3_step(stmt);
         if (rc != SQLITE_DONE) {
             int err = sqlite3_extended_errcode(db);
+            std::cout << "Err code: " << err << std::endl;
+            std::cout << "RC: " << rc << std::endl;
             sqlite3_finalize(stmt);
             sqlite3_close(db);
+            std::cout << "Can't do this " << std::endl;
             return false;
         } 
         sqlite3_exec(db, "COMMIT", 0, 0, 0);
@@ -205,32 +208,32 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
         sqlite3_finalize(stmt);   
     }
 
+
+
+
+
     // Prep JSON objects for insertion into DB
-    if (!paths.is<picojson::object>()) {
-        std::cerr << "Paths JSON is not an object -- it's probably malformed!" << std::endl;
-        return false;
-    }
     if (!management_policy_attrs.is<picojson::object>()) {
         std::cerr << "management policy attributes JSON is not an object -- it's probably malformed!" << std::endl;
         return false;
     }
 
     // Insertion of values into paths table
-    auto paths_obj = paths.get<picojson::object>();
-    auto iter = paths_obj.begin();
-    if (iter == paths_obj.end()) {
+    //auto paths_obj = paths.get<picojson::array>();
+    if (paths.empty()) {
         std::cerr << "Something is wrong, paths object appears empty." << std::endl;
         sqlite3_close(db);
         return false;
     }
     std::string path_local;
-    int recursive_local; // treated as a bool, but initialized as int to play nicely with sqlite datatypes
-    for (iter; iter != paths_obj.end(); ++iter) {
-        path_local = iter->first; // grab the path from the key
-        recursive_local = iter->second.get<int64_t>(); // grab the recursive flag from the value
-
-        std::cout << "path_local: " << path_local << std::endl;
-        std::cout << "recursive_local: " << recursive_local << std::endl;
+    bool recursive_local; 
+    for (auto & paths_iter : paths) {
+        auto path_obj = paths_iter.get<picojson::object>();
+        auto path_obj_iterator = path_obj.begin();
+        for (path_obj_iterator; path_obj_iterator != path_obj.end(); ++path_obj_iterator) {
+            path_local = path_obj_iterator->first; // grab the path from the key
+            recursive_local = path_obj_iterator->second.get<double>(); // grab the recursive flag from the value, cast as bool. Using int64_t instead of double causes undefined error.
+        }
         sqlite3_stmt *stmt;
 
         rc = sqlite3_prepare_v2(db, "INSERT INTO paths VALUES (?, ?, ?)", -1, &stmt, NULL);
@@ -268,14 +271,14 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
             return false;
         } 
         sqlite3_exec(db, "COMMIT", 0, 0, 0);
-        sqlite3_finalize(stmt);      
+        sqlite3_finalize(stmt);     
     } 
 
     // Insertion of values into management_policy_attrs table
     double dedicated_storage_GB, opportunistic_storage_GB;
-    int64_t max_num_objects, creation_time, expiration_time, deletion_time;
+    int max_num_objects, creation_time, expiration_time, deletion_time;
     auto policy_attrs_obj = management_policy_attrs.get<picojson::object>();
-    iter = policy_attrs_obj.begin();
+    auto iter = policy_attrs_obj.begin();
     if (iter == policy_attrs_obj.end()) {
         std::cerr << "Something is wrong, policy attribute object appears empty." << std::endl;
         sqlite3_close(db);
@@ -290,27 +293,24 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
             opportunistic_storage_GB = iter->second.get<double>();
         }
         if (iter->first == "max_num_objects") {
-            max_num_objects = iter->second.get<int64_t>();
+            max_num_objects = iter->second.get<double>();
         }
         if (iter->first == "creation_time") {
-            creation_time = iter->second.get<int64_t>();
+            creation_time = iter->second.get<double>();
         }
         if (iter->first == "expiration_time") {
-            expiration_time = iter->second.get<int64_t>();
+            expiration_time = iter->second.get<double>();
         }
         if (iter->first == "deletion_time") {
-            deletion_time = iter->second.get<int64_t>();
+            deletion_time = iter->second.get<double>();
         }
 
     }
-
-    std::cout << "deletion time: " << deletion_time << std::endl;
 
     std::cout << "HERE 1.5" << std::endl;
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, "INSERT INTO management_policy_attributes VALUES (?, ?, ?, ?, ?, ?, ?)", -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-
         std::cout << sqlite3_extended_errcode(db) << std::endl;
         std::cout << sqlite3_errstr(sqlite3_extended_errcode(db)) << std::endl;
         sqlite3_close(db);
@@ -379,33 +379,33 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
 }
 
 
-int main() {
+// int main() {
 
-    std::string lot_name = "Justin's Lot";
-    std::vector<std::string> owners_vec{"Justin", "Brian"};
-    std::vector<std::string> parents_vec{"Justin's Lot", "another_parent"};
-    std::vector<std::string> children_vec{"some_child", "another_child"};
-    const char man_policy_str[] = "{\"dedicated_storage_GB\":10, \"opportunistic_storage_GB\":5, \"max_num_objects\":100, \"creation_time\":123, \"expiration_time\":234, \"deletion_time\":345}";
-    const char paths_str[] = "{\"/a/path\":0, \"/foo/bar\":1}";
-    picojson::value man_policy;
-    picojson::value paths;
+//     std::string lot_name = "Justin's Lot";
+//     std::vector<std::string> owners_vec{"Justin", "Brian"};
+//     std::vector<std::string> parents_vec{"Justin's Lot", "another_parent"};
+//     std::vector<std::string> children_vec{"some_child", "another_child"};
+//     const char man_policy_str[] = "{\"dedicated_storage_GB\":10, \"opportunistic_storage_GB\":5, \"max_num_objects\":100, \"creation_time\":123, \"expiration_time\":234, \"deletion_time\":345}";
+//     const char paths_str[] = "{\"/a/path\":0, \"/foo/bar\":1}";
+//     picojson::value man_policy;
+//     picojson::value paths;
 
-    std::string err = picojson::parse(man_policy, man_policy_str);
-    if (!err.empty()) {
-        std::cerr << err << std::endl;
-    }
+//     std::string err = picojson::parse(man_policy, man_policy_str);
+//     if (!err.empty()) {
+//         std::cerr << err << std::endl;
+//     }
 
-    err = picojson::parse(paths, paths_str);
-    if (!err.empty()) {
-        std::cerr << err << std::endl;
-    }
+//     err = picojson::parse(paths, paths_str);
+//     if (!err.empty()) {
+//         std::cerr << err << std::endl;
+//     }
 
-    bool rv = store_lot(lot_name, owners_vec, parents_vec, children_vec, paths, man_policy);
-    std::cout << "main rv: " << std::endl;
+//     bool rv = store_lot(lot_name, owners_vec, parents_vec, children_vec, paths, man_policy);
+//     std::cout << "main rv: " << std::endl;
 
 
-    return 0;
-}
+//     return 0;
+// }
 
 
 

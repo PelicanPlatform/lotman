@@ -9,18 +9,7 @@ namespace {
 // TODO: Set up tests to export LOT_HOME in test subdir of build
 // TODO: Make tests delete /build/.lot at the end so the InitializeRootLot test passes each time it's run
 
-    
-    TEST(LotManTest, InitializeRootLot) {
-        char *err_msg;
-        const char name[] = "Justin's Lot";
-        const char path[] = "/workspaces/lotman";
-        const char owner[] = "Justin";
-        const char reclamation_policy[] = "{\"reclamation_policy\":{\"creation_time\":\"NOW\",\"expiration_time\":\"TOMORROW\",\"deletion_time\":\"TWO DAYS\"}}";
-        const char resource_limits[] = "{\"resource_limits\":{\"dedicated_storage\":\"10GB\",\"opportunistic_storage\":\"5GB\",\"max_num_objects\":100}}";
 
-        auto rv = lotman_initialize_root(name, path, owner, resource_limits, reclamation_policy, &err_msg);
-        ASSERT_TRUE(rv == 0);
-    }
 
     // TEST(LotManTest, InvalidInitializeRootLot) {
     //     char *err_msg;
@@ -48,16 +37,18 @@ namespace {
 
     TEST(LotManTest, AddRemoveSublot) {
         char *err_msg;
-    const char lot_name[] = "Justin's Lot";
-    // std::vector<std::string> parents_vec{"some_parent", "another_parent"};
-    // std::vector<std::string> children_vec{"some_child", "another_child"};
-    const char owners[2][6] = {"Justin", "Brian"};
-    int num_owners = sizeof(owners)/sizeof(owners[0])
-    const char man_policy_str[] = "{\"dedicated_storage_GB\":10, \"opportunistic_storage_GB\":5, \"max_num_objects\":100, \"creation_time\":123, \"expiration_time\":234, \"deletion_time\":345}";
-    const char paths_str[] = "{\"/a/path\":0, \"/foo/bar\":1}";
+        const char *lot_object = "{\"lot_name\": \"Justin's Lot\",\"owners\": [\"Justin\", \"Brian\", \"Cannon\"],\"parents\": [\"Justin’s Lot\"],\"paths\": [{\"/a/path\":0},{\"/foo/bar\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *context;
 
-        auto rv = lotman_add_sublot(name, path, parent, owner, reclamation_policy, resource_limits, &err_msg);
+        const char *lot2_object = "{\"lot_name\": \"Brian's Lot\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"Justin’s Lot\"],\"children\": [\"child1\", \"child2\"],\"paths\": [{\"/a/path\":0},{\"/foo/bar\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100, \"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+
+
+
+        auto rv = lotman_add_lot(lot_object, context, &err_msg);
         ASSERT_TRUE(rv == 0);
+        rv = lotman_add_lot(lot2_object, context, &err_msg);
+        ASSERT_TRUE(rv == 0);
+    
 
         //rv = lotman_remove_sublot(name, &err_msg);
         //ASSERT_TRUE(rv == 0);

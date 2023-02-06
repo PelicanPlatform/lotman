@@ -37,8 +37,7 @@ using namespace lotman;
     
 
 
-    bool lotman::Lot::add_sublot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::value paths, picojson::value management_policy_attrs) {
-
+    bool lotman::Lot::add_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::array paths, picojson::value management_policy_attrs) {
 
         return store_lot(lot_name, owners, parents, children, paths, management_policy_attrs);
     }
