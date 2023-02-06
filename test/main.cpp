@@ -48,12 +48,13 @@ namespace {
 
     TEST(LotManTest, AddRemoveSublot) {
         char *err_msg;
-        const char name[] = "Not Justin's Lot";
-        const char path[] = "/workspaces/lotman/build";
-        const char parent[] = "Justin's Lot";
-        const char owner[] = "Not_Justin";
-        const char reclamation_policy[] = "{\"reclamation_policy\":{\"creation_time\":\"NOW\",\"expiration_time\":\"2day\",\"deletion_time\":\"2day\"}}";
-        const char resource_limits[] = "{\"resource_limits\":{\"dedicated_storage\":\"5GB\",\"opportunistic_storage\":\"2.5GB\"}}";
+    const char lot_name[] = "Justin's Lot";
+    // std::vector<std::string> parents_vec{"some_parent", "another_parent"};
+    // std::vector<std::string> children_vec{"some_child", "another_child"};
+    const char owners[2][6] = {"Justin", "Brian"};
+    int num_owners = sizeof(owners)/sizeof(owners[0])
+    const char man_policy_str[] = "{\"dedicated_storage_GB\":10, \"opportunistic_storage_GB\":5, \"max_num_objects\":100, \"creation_time\":123, \"expiration_time\":234, \"deletion_time\":345}";
+    const char paths_str[] = "{\"/a/path\":0, \"/foo/bar\":1}";
 
         auto rv = lotman_add_sublot(name, path, parent, owner, reclamation_policy, resource_limits, &err_msg);
         ASSERT_TRUE(rv == 0);

@@ -18,7 +18,6 @@ Code for initializing the sqlite database that stores important Lot object infor
 
 */
 
-
 namespace {
 void initialize_lotdb( const std::string &lot_file) {
     sqlite3 *db;
@@ -114,7 +113,7 @@ std::string get_lot_file() {
 }
 } //namespace
 
-bool store_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::value paths, picojson::value management_policy_attrs) {
+bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::value paths, picojson::value management_policy_attrs) {
     // Get the lot db and open it
     auto lot_fname = get_lot_file();
 
@@ -166,7 +165,6 @@ bool store_lot(std::string lot_name, std::vector<std::string> owners, std::vecto
         sqlite3_finalize(stmt);   
     }
 
-
     // Insertion of values into parents table
     if (parents.empty()) {
         std::cerr << "Something is wrong, owners vector is empty." << std::endl;
@@ -206,9 +204,6 @@ bool store_lot(std::string lot_name, std::vector<std::string> owners, std::vecto
         sqlite3_exec(db, "COMMIT", 0, 0, 0);
         sqlite3_finalize(stmt);   
     }
-
-
-
 
     // Prep JSON objects for insertion into DB
     if (!paths.is<picojson::object>()) {
@@ -275,11 +270,6 @@ bool store_lot(std::string lot_name, std::vector<std::string> owners, std::vecto
         sqlite3_exec(db, "COMMIT", 0, 0, 0);
         sqlite3_finalize(stmt);      
     } 
-
-
-
-
-
 
     // Insertion of values into management_policy_attrs table
     double dedicated_storage_GB, opportunistic_storage_GB;
