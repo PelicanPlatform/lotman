@@ -117,7 +117,6 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
     // Get the lot db and open it
     auto lot_fname = get_lot_file();
 
-    std::cout << "HERE 1, in db" << std::endl;
     sqlite3 *db;
     int rc = sqlite3_open(lot_fname.c_str(), &db);
     if (rc) {
@@ -135,10 +134,6 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
         sqlite3_stmt *stmt;
         rc = sqlite3_prepare_v2(db, "INSERT INTO owners VALUES (?, ?)", -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
-            std::cout << "Here adding to owners, statement not prepped!" << std::endl;
-            std::cout << "rc: " << rc << std::endl;
-            std::cout << sqlite3_extended_errcode(db) << std::endl;
-            std::cout << sqlite3_errstr(sqlite3_extended_errcode(db)) << std::endl;
             sqlite3_close(db);
             return false;
         }
@@ -156,12 +151,8 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
         }
         rc = sqlite3_step(stmt);
         if (rc != SQLITE_DONE) {
-            int err = sqlite3_extended_errcode(db);
-            std::cout << "Err code: " << err << std::endl;
-            std::cout << "RC: " << rc << std::endl;
             sqlite3_finalize(stmt);
             sqlite3_close(db);
-            std::cout << "Can't do this " << std::endl;
             return false;
         } 
         sqlite3_exec(db, "COMMIT", 0, 0, 0);
@@ -178,10 +169,6 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
         sqlite3_stmt *stmt;
         rc = sqlite3_prepare_v2(db, "INSERT INTO parents VALUES (?, ?)", -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
-            std::cout << "Here adding to parents, statement not prepped!" << std::endl;
-            std::cout << "rc: " << rc << std::endl;
-            std::cout << sqlite3_extended_errcode(db) << std::endl;
-            std::cout << sqlite3_errstr(sqlite3_extended_errcode(db)) << std::endl;
             sqlite3_close(db);
             return false;
         }
@@ -208,10 +195,6 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
         sqlite3_finalize(stmt);   
     }
 
-
-
-
-
     // Prep JSON objects for insertion into DB
     if (!management_policy_attrs.is<picojson::object>()) {
         std::cerr << "management policy attributes JSON is not an object -- it's probably malformed!" << std::endl;
@@ -232,16 +215,12 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
         auto path_obj_iterator = path_obj.begin();
         for (path_obj_iterator; path_obj_iterator != path_obj.end(); ++path_obj_iterator) {
             path_local = path_obj_iterator->first; // grab the path from the key
-            recursive_local = path_obj_iterator->second.get<double>(); // grab the recursive flag from the value, cast as bool. Using int64_t instead of double causes undefined error.
+            recursive_local = path_obj_iterator->second.get<double>(); // grab the recursive flag from the value, cast as bool. Using int64_t instead of double in get method causes undefined error.
         }
         sqlite3_stmt *stmt;
 
         rc = sqlite3_prepare_v2(db, "INSERT INTO paths VALUES (?, ?, ?)", -1, &stmt, NULL);
         if (rc != SQLITE_OK) {
-            std::cout << "Here adding to dirs, statement not prepped!" << std::endl;
-            std::cout << "rc: " << rc << std::endl;
-            std::cout << sqlite3_extended_errcode(db) << std::endl;
-            std::cout << sqlite3_errstr(sqlite3_extended_errcode(db)) << std::endl;
             sqlite3_close(db);
             return false;
         }
@@ -307,61 +286,50 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
 
     }
 
-    std::cout << "HERE 1.5" << std::endl;
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, "INSERT INTO management_policy_attributes VALUES (?, ?, ?, ?, ?, ?, ?)", -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        std::cout << sqlite3_extended_errcode(db) << std::endl;
-        std::cout << sqlite3_errstr(sqlite3_extended_errcode(db)) << std::endl;
         sqlite3_close(db);
         return false;
     }
 
-    std::cout << "HERE 2" << std::endl; 
     // Bind inputs to sql statement
     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
-
     if (sqlite3_bind_double(stmt, 2, dedicated_storage_GB) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
-
     if (sqlite3_bind_double(stmt, 3, opportunistic_storage_GB) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
-
     if (sqlite3_bind_int64(stmt, 4, max_num_objects) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
-
     if (sqlite3_bind_int64(stmt, 5, creation_time) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
-
     if (sqlite3_bind_int64(stmt, 6, expiration_time) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
-
     if (sqlite3_bind_int64(stmt, 7, deletion_time) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
 
-    std::cout << "HERE 3" << std::endl;
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         int err = sqlite3_extended_errcode(db);
@@ -374,254 +342,227 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
     sqlite3_finalize(stmt);
     sqlite3_close(db);
 
-
     return true;
 }
 
 
-// int main() {
+bool lotman::Lot::delete_lot(std::string lot_name) {
+    auto lot_fname = get_lot_file();
+    if (lot_fname.size() == 0) {return false;}
 
-//     std::string lot_name = "Justin's Lot";
-//     std::vector<std::string> owners_vec{"Justin", "Brian"};
-//     std::vector<std::string> parents_vec{"Justin's Lot", "another_parent"};
-//     std::vector<std::string> children_vec{"some_child", "another_child"};
-//     const char man_policy_str[] = "{\"dedicated_storage_GB\":10, \"opportunistic_storage_GB\":5, \"max_num_objects\":100, \"creation_time\":123, \"expiration_time\":234, \"deletion_time\":345}";
-//     const char paths_str[] = "{\"/a/path\":0, \"/foo/bar\":1}";
-//     picojson::value man_policy;
-//     picojson::value paths;
+    sqlite3 *db;
+    int rc = sqlite3_open(lot_fname.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return false;
+    }
 
-//     std::string err = picojson::parse(man_policy, man_policy_str);
-//     if (!err.empty()) {
-//         std::cerr << err << std::endl;
-//     }
-
-//     err = picojson::parse(paths, paths_str);
-//     if (!err.empty()) {
-//         std::cerr << err << std::endl;
-//     }
-
-//     bool rv = store_lot(lot_name, owners_vec, parents_vec, children_vec, paths, man_policy);
-//     std::cout << "main rv: " << std::endl;
-
-
-//     return 0;
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// bool lotman::Lot::store_lot(std::string name, std::string path, std::string parent, std::string owner, picojson::value resource_limits, picojson::value reclamation_policy) {
-//     //picojson::object resource_limits_object;
-//     //picojson::object reclamation_policy_object;
-//     //resource_limits_object["resource_limits"] = resource_limits;
-//     //reclamation_policy_object["reclamation_policy"] = reclamation_policy;
-//     picojson::value resource_limits_value(resource_limits);
-//     picojson::value reclamation_policy_value(reclamation_policy);
-//     std::string resource_limits_json_str = resource_limits_value.serialize();
-//     std::string reclamation_policy_json_str = reclamation_policy_value.serialize();
+    // Delete from owners table
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, "DELETE FROM owners WHERE lot_name = ?;", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
     
-//     auto lot_fname = get_lot_file();
+    // Delete from parents table
+    rc = sqlite3_prepare_v2(db, "DELETE FROM parents WHERE lot_name = ?;", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
-//     sqlite3 *db;
-//     int rc = sqlite3_open(lot_fname.c_str(), &db);
-//     if (rc) {
-//         sqlite3_close(db);
-//         return false;
-//     }
+    // Delete from paths
+    rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE lot_name = ?;", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
-//     sqlite3_stmt *stmt;
-//     rc = sqlite3_prepare_v2(db, "INSERT INTO lot VALUES (?, ?, ?, ?, ?, ?)", -1, &stmt, NULL);
-//     if (rc != SQLITE_OK) {
-//         sqlite3_close(db);
-//         return false;
-//     }
+    // Delete from management_policy_attributes
+        rc = sqlite3_prepare_v2(db, "DELETE FROM management_policy_attributes WHERE lot_name = ?;", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
-//     // Bind inputs to sql statement
-//     if (sqlite3_bind_text(stmt, 1, name.c_str(), name.size(), SQLITE_STATIC) != SQLITE_OK) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }
+    // Delete from lot_usage
+    rc = sqlite3_prepare_v2(db, "DELETE FROM lot_usage WHERE lot_name = ?;", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
-//     if (sqlite3_bind_text(stmt, 2, path.c_str(), path.size(), SQLITE_STATIC) != SQLITE_OK) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
 
-//     if (sqlite3_bind_text(stmt, 3, parent.c_str(), parent.size(), SQLITE_STATIC) != SQLITE_OK) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }
-
-//     if (sqlite3_bind_text(stmt, 4, owner.c_str(), owner.size(), SQLITE_STATIC) != SQLITE_OK) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }
-
-//     if (sqlite3_bind_text(stmt, 5, resource_limits_json_str.c_str(), resource_limits_json_str.size(), SQLITE_STATIC) != SQLITE_OK) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }   
-
-//     if (sqlite3_bind_text(stmt, 6, reclamation_policy_json_str.c_str(), reclamation_policy_json_str.size(), SQLITE_STATIC) != SQLITE_OK) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }   
-
-//     rc = sqlite3_step(stmt);
-//     if (rc != SQLITE_DONE) {
-//         int err = sqlite3_extended_errcode(db);
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-
-//         if (err == SQLITE_CONSTRAINT_PRIMARYKEY) {
-//             std::cerr << "Lot path already exists" << std::endl;
-//         }
-//         return false;
-//     }
-
-//     sqlite3_exec(db, "COMMIT", 0, 0, 0);
-//     sqlite3_finalize(stmt);
-//     sqlite3_close(db);
-
-//     return true;
-// }
-
-
-// bool lotman::Lot::remove_lot(std::string name) {
-//     auto lot_fname = get_lot_file();
-//     if (lot_fname.size() == 0) {return false;}
-
-//     sqlite3 *db;
-//     int rc = sqlite3_open(lot_fname.c_str(), &db);
-//     if (rc) {
-//         sqlite3_close(db);
-//         return false;
-//     }
-
-//     sqlite3_stmt *stmt;
-//     rc = sqlite3_prepare_v2(db, "DELETE FROM lot WHERE lot_name = ?;", -1, &stmt, NULL);
-//     if (rc != SQLITE_OK) {
-//         sqlite3_close(db);
-//         return false;
-//     }
-
-//     if (sqlite3_bind_text(stmt, 1, name.c_str(), name.size(), SQLITE_STATIC) != SQLITE_OK) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }
-
-//     rc = sqlite3_step(stmt);
-//     if (rc != SQLITE_DONE) {
-//         int err = sqlite3_extended_errcode(db);
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }
-
-//     sqlite3_exec(db, "COMMIT", 0, 0, 0);
-//     sqlite3_finalize(stmt);
-//     sqlite3_close(db);
-
-//     return true;
-// }
-
-// bool lotman::Validator::SQL_match_exists(std::string query) {
-//     auto lot_fname = get_lot_file();
-//     if (lot_fname.size() == 0) {return false;}
-
-//     sqlite3 *db;
-//     int rc = sqlite3_open(lot_fname.c_str(), &db);
-//     if (rc) {
-//         sqlite3_close(db);
-//         return false;
-//     }
-
-//     sqlite3_stmt *stmt;
-//     rc = sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, NULL);
-//     if (rc != SQLITE_OK) {
-//         sqlite3_close(db);
-//         return false;
-//     }
-
-//     rc = sqlite3_step(stmt);
-//     if (rc == SQLITE_ROW) {
-//         //int err = sqlite3_extended_errcode(db);
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return true;
-//     }
-//     else if (rc == SQLITE_DONE) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }
-//     else {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return false;
-//     }
-// }
+    std::cout << "Hitting 'return true'" << std::endl;
+    return true;
+}
 
 
 
 
-// std::vector<std::string> lotman::Validator::SQL_get_matches(std::string query) {
-//     std::vector<std::string> data_vec;
-//     auto lot_fname = get_lot_file();
-//     if (lot_fname.size() == 0) {return data_vec;}
 
-//     sqlite3 *db;
-//     int rc = sqlite3_open(lot_fname.c_str(), &db);
-//     if (rc) {
-//         sqlite3_close(db);
-//         return data_vec;
-//     }
 
-//     sqlite3_stmt *stmt;
-//     rc = sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, NULL);
-//     if (rc != SQLITE_OK) {
-//         sqlite3_close(db);
-//         return data_vec;
-//     }
+std::vector<std::string> lotman::Validator::SQL_get_matches(std::string query) { // TODO: Update this to use bind_text for added protection against SQL injection
+    std::vector<std::string> data_vec;
 
-//     rc = sqlite3_step(stmt);
-//     while (rc == SQLITE_ROW) {
-//         const unsigned char *_data = sqlite3_column_text(stmt, 0);
-//         std::string data(reinterpret_cast<const char *>(_data));
-//         data_vec.push_back(data);
+    auto lot_fname = get_lot_file();
+    if (lot_fname.size() == 0) {return data_vec;}
 
-//         rc = sqlite3_step(stmt);
-//     }
-//     if (rc == SQLITE_DONE) {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return data_vec;
-//     }
-//     else {
-//         sqlite3_finalize(stmt);
-//         sqlite3_close(db);
-//         return data_vec;
-//     }
+    sqlite3 *db;
+    int rc = sqlite3_open(lot_fname.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return data_vec;
+    }
 
-// }
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        std::cout << "Can't prepare get_matches query" << std::endl;
+        sqlite3_close(db);
+        return data_vec;
+    }
+
+    rc = sqlite3_step(stmt);
+    while (rc == SQLITE_ROW) {
+        std::cout << "stepping" << std::endl;
+        const unsigned char *_data = sqlite3_column_text(stmt, 0);
+        std::string data(reinterpret_cast<const char *>(_data));
+        data_vec.push_back(data);
+
+        rc = sqlite3_step(stmt);
+    }
+    if (rc == SQLITE_DONE) {
+        std::cout << "rc == SQLITE_DONE" << std::endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return data_vec;
+    }
+    else {
+        std::cout << "in rc != sqlite_done" << std::endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return data_vec;
+    }
+
+}
+
+bool lotman::Validator::SQL_update_parent(std::string lot_name, std::string current_parent, std::string parent_set_val) {
+    auto lot_fname = get_lot_file();
+    if (lot_fname.size() == 0) {return false;}
+
+    sqlite3 *db;
+    int rc = sqlite3_open(lot_fname.c_str(), &db);
+    if (rc) {
+        std::cout << "Can't open DB" << std::endl;
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, "UPDATE parents SET parent=(?) WHERE lot_name=(?) AND parent=(?);", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        std::cout << "Can't prepare update parent statement" << std::endl;
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_text(stmt, 2, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        std::cout << "Can't bind lot name" << std::endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_text(stmt, 1, parent_set_val.c_str(), parent_set_val.size(), SQLITE_STATIC) != SQLITE_OK) {
+        std::cout << "Can't bind parent set val" << std::endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_text(stmt, 3, current_parent.c_str(), current_parent.size(), SQLITE_STATIC) != SQLITE_OK) {
+        std::cout << "Can't bind current parent" << std::endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        int err = sqlite3_extended_errcode(db);
+        std::cout << "Can't step statement: err: " << err << std::endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+
+    return true;
+}

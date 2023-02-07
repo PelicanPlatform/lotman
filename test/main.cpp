@@ -37,51 +37,43 @@ namespace {
 
     TEST(LotManTest, AddRemoveSublot) {
         char *err_msg;
-        const char *lot_object = "{\"lot_name\": \"Justin's Lot\",\"owners\": [\"Justin\", \"Brian\", \"Cannon\"],\"parents\": [\"Justin’s Lot\"],\"paths\": [{\"/a/path\":0},{\"/foo/bar\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
         const char *context;
 
-        const char *lot2_object = "{\"lot_name\": \"Brian's Lot\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"Justin’s Lot\"],\"children\": [\"child1\", \"child2\"],\"paths\": [{\"/a/path\":0},{\"/foo/bar\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100, \"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *lot1 = "{\"lot_name\": \"lot1\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"lot1\"],\"paths\": [{\"/a/path\":0},{\"/foo/bar\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *lot2 = "{\"lot_name\": \"lot2\",  \"owners\": [\"Justin\", \"Brian\"],  \"parents\": [\"lot1\"],  \"paths\": [{\"/b/path\":0},{\"/foo/baz\":1}],  \"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *lot3 = "{ \"lot_name\": \"lot3\", \"owners\": [\"Justin\", \"Brian\"],  \"parents\": [\"lot3\"],  \"paths\": [{\"/another/path\":0},{\"/123\":1}], \"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *lot4 = "{ \"lot_name\": \"lot4\", \"owners\": [\"Justin\", \"Brian\"], \"parents\": [\"lot2\",\"lot3\"], \"paths\": [{\"/234\":0},{\"/345\":1}], \"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        // lot5 with cycle
+        //const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot4\"],\"children\": [\"lot1\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        // lot5 without children
+        //const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot4\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        // lot5 only self parent
+        //const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot5\"],\"children\": [\"lot1\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        // lot5 insertion
+        const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot3\"],\"children\": [\"lot4\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
 
 
-
-        auto rv = lotman_add_lot(lot_object, context, &err_msg);
+        auto rv = lotman_add_lot(lot1, context, &err_msg);
         ASSERT_TRUE(rv == 0);
-        rv = lotman_add_lot(lot2_object, context, &err_msg);
+
+        rv = lotman_add_lot(lot2, context, &err_msg);
+        ASSERT_TRUE(rv == 0);
+  
+        rv = lotman_add_lot(lot3, context, &err_msg);
+        ASSERT_TRUE(rv == 0);
+
+        rv = lotman_add_lot(lot4, context, &err_msg);
+        ASSERT_TRUE(rv == 0);
+
+        rv = lotman_add_lot(lot5, context, &err_msg);
         ASSERT_TRUE(rv == 0);
     
-
-        //rv = lotman_remove_sublot(name, &err_msg);
-        //ASSERT_TRUE(rv == 0);
+        const char *lot_to_delete = "lot1";
+        rv = lotman_remove_lot(lot_to_delete, context, &err_msg);
+        ASSERT_TRUE(rv == 0);
     }
 
-    // TEST(LotManTest, AddInvalidSublot) {
-    //     char *err_msg;
-    //     const char name[] = "Justin's Lot";
-    //     const char path[] = "/workspaces/lotman/build/test";
-    //     const char owner[] = "Not_Justin";
-    //     const char users[] = "Not_Justin_2";
-    //     const char reclamation_policy[] = "{\"reclamation_policy\":{\"creation_time\":\"NOW\",\"expiration_time\":\"2day\",\"deletion_time\":\"2day\"}}";
-    //     const char resource_limits[] = "{\"resource_limits\":{\"dedicated_storage\":\"5GB\",\"opportunistic_storage\":\"2.5GB\"}}";
 
-    //     // Add a valid sublot
-    //     auto rv = lotman_add_sublot(path, owner, users, reclamation_policy, resource_limits, &err_msg);
-    //     ASSERT_TRUE(rv == 0);
-
-    //     // Try to re-add the same sublot
-    //     const char path2[] = "/workspaces/lotman/build/test";
-    //     rv = lotman_add_sublot(path2, owner, users, reclamation_policy, resource_limits, &err_msg);
-    //     ASSERT_FALSE(rv == 0);
-
-    //     // Try to add a sublot between existing lots
-    //     const char path3[] = "/workspaces/lotman/build";
-    //     rv = lotman_add_sublot(path3, owner, users, reclamation_policy, resource_limits, &err_msg);
-    //     ASSERT_FALSE(rv == 0);
-
-    //     // Try to add a sublot that isn't contained by any root lot
-    //     const char path4[] = "/workspaces";
-    //     rv = lotman_add_sublot(path4, owner, users, reclamation_policy, resource_limits, &err_msg);
-    //     ASSERT_FALSE(rv == 0);
-    // }
 
 
     TEST(LotManTest, GetVersionTest) {

@@ -58,6 +58,7 @@ const char * lotman_version() {
 
 
 int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg) {
+    // TODO: Check for context and figure out what to do with it
     
     picojson::value lotman_JSON;
     std::string err = picojson::parse(lotman_JSON, lotman_JSON_str);
@@ -65,8 +66,6 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
         std::cerr << "LotMan JSON can't be parsed -- it's probably malformed!";
         std::cerr << err << std::endl;
     }
-
-
 
     if (!lotman_JSON.is<picojson::object>()) {
         std::cerr << "LotMan JSON is not recognized as an object -- it's probably malformed!" << std::endl;
@@ -88,19 +87,14 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
         auto first_item = iter->first; 
         auto second_item = iter->second; 
 
-        // std::cout << "First: " << first_item << std::endl;
-        // std::cout << "Second: " << second_item << std::endl;
-
         if (first_item == "lot_name") {
             if (!second_item.is<std::string>()) {
                 std::cerr << "Something is wrong -- lot name is not recognized as a string." << std::endl;
                 return -1;
             }
             lot_name = second_item.get<std::string>();
-            std::cout << "In lot name loop" << std::endl;
         }
         if (first_item == "owners") { 
-            std::cout << "In owners loop" << std::endl;
             if (!second_item.is<picojson::array>()) { // TODO: Since second_item is already a vector, no need to create a second owners vec.
                 std::cerr << "Something is wrong -- owners array is not array." << std::endl;
                 return -1;
@@ -119,7 +113,6 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
             }
         }
         if (first_item == "parents") {
-            std::cout << "In parents loop" << std::endl;
             if (!second_item.is<picojson::array>()) {
                 std::cerr << "Something is wrong -- parents array is not array." << std::endl;
                 return -1; 
@@ -138,7 +131,6 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
             }
         }
         if (first_item == "children") {
-            std::cout << "In children loop" << std::endl;
             if (!second_item.is<picojson::array>()) {
                 std::cerr << "Something is wrong -- children array is not array." << std::endl;
                 return -1; 
@@ -183,6 +175,29 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
     try {
         if (!lotman::Lot::add_lot(lot_name, owners, parents, children, paths, management_policy_attrs)) {
             if (err_msg) {*err_msg = strdup("Failed to add lot");}
+            std::cout << "error: " << *err_msg << std::endl;
+            return -1;
+        }
+    }
+    catch(std::exception &exc) {
+        if (err_msg) {*err_msg = strdup(exc.what());}
+        return -1;
+    }
+
+    return 0;
+}
+
+int lotman_remove_lot(const char *lot_name, const char *lotman_context, char **err_msg) {
+    // TODO: Check for context and figure out what to do with it
+
+    if (!lot_name) {
+        if (err_msg) {*err_msg = strdup("Name for lot to be removed must not be nullpointer.");}
+        return -1;
+    }
+
+    try {
+        if (!lotman::Lot::remove_lot(lot_name)) {
+            if (err_msg) {*err_msg = strdup("Failed to remove lot");}
             std::cout << "error: " << *err_msg << std::endl;
             return -1;
         }
