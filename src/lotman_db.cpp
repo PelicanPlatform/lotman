@@ -458,7 +458,7 @@ bool lotman::Lot::delete_lot(std::string lot_name) {
     return true;
 }
 
-std::vector<std::string> lotman::Validator::SQL_get_matches(std::string dynamic_query, std::map<std::string, int> str_map, std::map<int, int> int_map, std::map<double, int> double_map) { 
+std::vector<std::string> lotman::Validator::SQL_get_matches(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map, std::map<int, std::vector<int>> int_map, std::map<double, std::vector<int>> double_map) { 
     std::vector<std::string> data_vec;
 
     auto lot_fname = get_lot_file();
@@ -480,45 +480,52 @@ std::vector<std::string> lotman::Validator::SQL_get_matches(std::string dynamic_
     }
 
     if (str_map.size()>0) {
-        for (const auto & map : str_map) {
-            if (sqlite3_bind_text(stmt, map.second, map.first.c_str(), map.first.size(), SQLITE_STATIC) != SQLITE_OK) {
-                sqlite3_finalize(stmt);
-                sqlite3_close(db);
-                return data_vec;
+        for (const auto & key : str_map) {
+            for (const auto & value : key.second) {
+                if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+                    std::cout << "problem with str_map binding" << std::endl;
+                    sqlite3_finalize(stmt);
+                    sqlite3_close(db);
+                    return data_vec;
+                }
             }
         }
     }
 
     if (int_map.size()>0) {
-        for (const auto & map : int_map) {
-            if (sqlite3_bind_int(stmt, map.second, map.first) != SQLITE_OK) {
-                sqlite3_finalize(stmt);
-                sqlite3_close(db);
-                return data_vec;
+        for (const auto & key : int_map) {
+            for (const auto & value : key.second) {
+                if (sqlite3_bind_int(stmt, value, key.first) != SQLITE_OK) {
+                    std::cout << "problem with int_map binding" << std::endl;
+                    sqlite3_finalize(stmt);
+                    sqlite3_close(db);
+                    return data_vec;
+                }
             }
         }
     }
 
     if (double_map.size()>0) {
-        for (const auto & map : double_map) {
-            if (sqlite3_bind_double(stmt, map.second, map.first) != SQLITE_OK) {
-                sqlite3_finalize(stmt);
-                sqlite3_close(db);
-                return data_vec;
+        for (const auto & key : double_map) {
+            for (const auto & value : key.second) {
+                if (sqlite3_bind_double(stmt, value, key.first) != SQLITE_OK) {
+                    std::cout << "problem with double map binding" << std::endl;
+                    sqlite3_finalize(stmt);
+                    sqlite3_close(db);
+                    return data_vec;
+                }
             }
         }
     }
 
     rc = sqlite3_step(stmt);
     while (rc == SQLITE_ROW) {
-        std::cout << "stepping" << std::endl;
         const unsigned char *_data = sqlite3_column_text(stmt, 0);
         std::string data(reinterpret_cast<const char *>(_data));
         data_vec.push_back(data);
         rc = sqlite3_step(stmt);
     }
     if (rc == SQLITE_DONE) {
-        std::cout << "rc == SQLITE_DONE" << std::endl;
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return data_vec;

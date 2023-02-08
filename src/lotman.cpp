@@ -210,6 +210,15 @@ int lotman_remove_lot(const char *lot_name, const char *lotman_context, char **e
     return 0;
 }
 
+int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg) {
+    if (!lot_name) {
+        if (err_msg) {*err_msg = strdup("Name for lot to be removed must not be nullpointer.");}
+        return -1;
+    }
+    return lotman::Lot::lot_exists(lot_name);
+}
+
+
 
 // int lotman_remove_sublot(const char *name, char **err_msg) {
 //     if (!name) {

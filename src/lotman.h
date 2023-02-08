@@ -21,6 +21,7 @@ const char * lotman_version();
 
 int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
 int lotman_remove_lot(const char *lot_name, const char *lotman_context, char **err_msg);
+int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg);
 //int lotman_remove_sublot(const char *name, char **err_msg);
 // //int lotman_get_sublot_paths(const char *path, char **sublot_paths_arr, char **err_msg);
 

@@ -16,7 +16,7 @@ bool lotman::Lot::lot_exists(std::string lot_name) {
 
     //std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name='" + lot_name + "';"; // TODO: reformat to prevent injection
     std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name = ?;";
-    std::map<std::string, int> lot_exists_str_map{{lot_name, 1}};
+    std::map<std::string, std::vector<int>> lot_exists_str_map{{lot_name, {1}}};
 
     return (lotman::Validator::SQL_get_matches(lot_exists_query, lot_exists_str_map).size()>0);
 }
@@ -24,7 +24,7 @@ bool lotman::Lot::lot_exists(std::string lot_name) {
 bool lotman::Lot::add_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::array paths, picojson::value management_policy_attrs) {
     // TODO: Error handling
 
-    // Check that any specified parents already exist
+    // Check that any specified parents already exist, unless the lot has itself as parent
     for (auto & parents_iter : parents) {
         if (parents_iter != lot_name && !lot_exists(parents_iter)) {
             return false;
@@ -61,7 +61,6 @@ bool lotman::Lot::add_lot(std::string lot_name, std::vector<std::string> owners,
         for (auto & parents_iter : parents) {
             for (auto & children_iter : children) {
                 if (lotman::Validator::insertion_check(lot_name, parents_iter, children_iter)) {
-                    std::cout << "In insertion check loop" << std::endl;
                     // Update child to have lot_name as a parent instead of parents_iter. Later, save LTBA with all its specified parents.
                     parent_updated = lotman::Validator::SQL_update_parent(children_iter, parents_iter, lot_name);
                     if (!parent_updated) { // Something went wrong, abort
@@ -89,8 +88,7 @@ std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name, boo
     }
 
     std::string parents_query = "SELECT parent FROM parents WHERE lot_name = ? AND parent != ?;"; 
-    std::map<std::string, int> parents_query_str_map{{lot_name, 1},{lot_name, 2}};
-    std::cout << "parents query: " << parents_query << std::endl;
+    std::map<std::string, std::vector<int>> parents_query_str_map{{lot_name, {1,2}}};
     std::vector<std::string> lot_parents_vec = lotman::Validator::SQL_get_matches(parents_query, parents_query_str_map);
 
     return lot_parents_vec;
@@ -125,6 +123,7 @@ bool lotman::Validator::cycle_check(std::string start_node, std::vector<std::str
     while (dfs_nodes_to_visit.size()>0) { // When dfs_nodes_to_visit has size 0, we're done checking
         std::vector<std::string> dfs_node_parents = lotman::Lot::get_parent_names(dfs_nodes_to_visit[0]);
         dfs_nodes_to_visit.insert(dfs_nodes_to_visit.end(), dfs_node_parents.begin(), dfs_node_parents.end());
+
         for (auto & children_iter : start_children) { // For each specified child of start node ...
             auto check_iter = std::find(dfs_nodes_to_visit.begin(), dfs_nodes_to_visit.end(), children_iter); // ... check if that child is going to be visited ...
             if (check_iter != dfs_nodes_to_visit.end()) {

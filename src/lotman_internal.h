@@ -53,7 +53,7 @@ class Validator {
         //static std::vector<std::string> get_child_dirs(std::string lot_path, bool recursive=false);
 
     private:
-        static std::vector<std::string> SQL_get_matches(std::string dynamic_query, std::map<std::string, int> str_map = std::map<std::string, int>(), std::map<int,int> int_map = std::map<int, int>(), std::map<double,int> double_map = std::map<double, int>()); // returns vector of matches to input query
+        static std::vector<std::string> SQL_get_matches(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
         static bool SQL_update_parent(std::string lot_name, std::string current_parent, std::string parent_set_val); // Returns true if successful, else false
 
 };
