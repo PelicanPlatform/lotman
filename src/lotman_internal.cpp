@@ -139,6 +139,15 @@ bool update_lot(std::string lot_name,
                 std::map<std::string, int> paths_map = std::map<std::string, int>(), 
                 std::map<std::string, int> management_policy_attrs_int_map = std::map<std::string, int>(), 
                 std::map<std::string, double> management_policy_attrs_double_map = std::map<std::string, double>()) {
+    
+    // For each change in each map, store the change.
+    std::string owners_dynamic_query = "UPDATE owners SET owner=(?) WHERE lot_name=(?) AND owner=(?);";
+    for (auto & key : owners_map) {
+        bool rv = lotman::Lot::store_modifications(owners_dynamic_query, std::map<std::string, std::vector<int>>{{key.second, {1}}, {lot_name, {2}}, {key.first, {3}}})
+        if (!rv) {
+            return false;
+        }
+    }
 
     
 

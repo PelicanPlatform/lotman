@@ -595,3 +595,83 @@ bool lotman::Validator::SQL_update_parent(std::string lot_name, std::string curr
 
     return true;
 }
+
+bool store_modifications(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()) {
+    auto lot_fname = get_lot_file();
+    if (lot_fname.size() == 0) {return data_vec;}
+
+    sqlite3 *db;
+    int rc = sqlite3_open(lot_fname.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return data_vec;
+    }
+
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, dynamic_query.c_str(), -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        std::cout << "Can't prepare modify_lot query" << std::endl;
+        sqlite3_close(db);
+        return data_vec;
+    }
+
+    if (str_map.size()>0) {
+        for (const auto & key : str_map) {
+            for (const auto & value : key.second) {
+                if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+                    std::cout << "problem with str_map binding" << std::endl;
+                    sqlite3_finalize(stmt);
+                    sqlite3_close(db);
+                    return data_vec;
+                }
+            }
+        }
+    }
+
+    if (int_map.size()>0) {
+        for (const auto & key : int_map) {
+            for (const auto & value : key.second) {
+                if (sqlite3_bind_int(stmt, value, key.first) != SQLITE_OK) {
+                    std::cout << "problem with int_map binding" << std::endl;
+                    sqlite3_finalize(stmt);
+                    sqlite3_close(db);
+                    return data_vec;
+                }
+            }
+        }
+    }
+
+    if (double_map.size()>0) {
+        for (const auto & key : double_map) {
+            for (const auto & value : key.second) {
+                if (sqlite3_bind_double(stmt, value, key.first) != SQLITE_OK) {
+                    std::cout << "problem with double map binding" << std::endl;
+                    sqlite3_finalize(stmt);
+                    sqlite3_close(db);
+                    return data_vec;
+                }
+            }
+        }
+    }
+
+    rc = sqlite3_step(stmt);
+    while (rc == SQLITE_ROW) {
+        const unsigned char *_data = sqlite3_column_text(stmt, 0);
+        std::string data(reinterpret_cast<const char *>(_data));
+        data_vec.push_back(data);
+        rc = sqlite3_step(stmt);
+    }
+    if (rc == SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return data_vec;
+    }
+    else {
+        std::cout << "in rc != sqlite_done" << std::endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return data_vec;
+    }
+
+    return 0;
+}

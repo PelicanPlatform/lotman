@@ -60,10 +60,10 @@ class Lot {
                               picojson::value management_policy_attrs);
 
         static bool delete_lot(std::string lot_name);
-        static bool modify_lot(std::string dynamic_query, 
-                               std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), 
-                               std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), 
-                               std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
+        static bool store_modifications(std::string dynamic_query, 
+                                        std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), 
+                                        std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), 
+                                        std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
 };
 
 /**
