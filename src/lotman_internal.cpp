@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <iostream>
 #include <picojson.h>
+#include <sqlite3.h>
 //#include <vector>
 
 #include "lotman_internal.h"
@@ -12,8 +13,12 @@ using namespace lotman;
  * Functions specific to Lot class
 */
 bool lotman::Lot::lot_exists(std::string lot_name) {
-    std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name='" + lot_name + "';"; // TODO: reformat to prevent injection
-    return (lotman::Validator::SQL_get_matches(lot_exists_query).size()>0);
+
+    //std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name='" + lot_name + "';"; // TODO: reformat to prevent injection
+    std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name = ?;";
+    std::map<std::string, int> lot_exists_str_map{{lot_name, 1}};
+
+    return (lotman::Validator::SQL_get_matches(lot_exists_query, lot_exists_str_map).size()>0);
 }
 
 bool lotman::Lot::add_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::array paths, picojson::value management_policy_attrs) {
@@ -83,9 +88,10 @@ std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name, boo
         return std::vector<std::string>();
     }
 
-    std::string parents_query = "SELECT parent FROM parents WHERE lot_name = '" + lot_name + "' AND parent != '" + lot_name + "';"; // TODO: IMPORTANT! make this safe against SQL injection. Currently vulnerable. 
+    std::string parents_query = "SELECT parent FROM parents WHERE lot_name = ? AND parent != ?;"; 
+    std::map<std::string, int> parents_query_str_map{{lot_name, 1},{lot_name, 2}};
     std::cout << "parents query: " << parents_query << std::endl;
-    std::vector<std::string> lot_parents_vec = lotman::Validator::SQL_get_matches(parents_query);
+    std::vector<std::string> lot_parents_vec = lotman::Validator::SQL_get_matches(parents_query, parents_query_str_map);
 
     return lot_parents_vec;
 }

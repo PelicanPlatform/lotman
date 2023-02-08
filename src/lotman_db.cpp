@@ -345,7 +345,6 @@ bool lotman::Lot::store_lot(std::string lot_name, std::vector<std::string> owner
     return true;
 }
 
-
 bool lotman::Lot::delete_lot(std::string lot_name) {
     auto lot_fname = get_lot_file();
     if (lot_fname.size() == 0) {return false;}
@@ -456,16 +455,10 @@ bool lotman::Lot::delete_lot(std::string lot_name) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
 
-    std::cout << "Hitting 'return true'" << std::endl;
     return true;
 }
 
-
-
-
-
-
-std::vector<std::string> lotman::Validator::SQL_get_matches(std::string query) { // TODO: Update this to use bind_text for added protection against SQL injection
+std::vector<std::string> lotman::Validator::SQL_get_matches(std::string dynamic_query, std::map<std::string, int> str_map, std::map<int, int> int_map, std::map<double, int> double_map) { 
     std::vector<std::string> data_vec;
 
     auto lot_fname = get_lot_file();
@@ -479,11 +472,41 @@ std::vector<std::string> lotman::Validator::SQL_get_matches(std::string query) {
     }
 
     sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, NULL);
+    rc = sqlite3_prepare_v2(db, dynamic_query.c_str(), -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         std::cout << "Can't prepare get_matches query" << std::endl;
         sqlite3_close(db);
         return data_vec;
+    }
+
+    if (str_map.size()>0) {
+        for (const auto & map : str_map) {
+            if (sqlite3_bind_text(stmt, map.second, map.first.c_str(), map.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+                sqlite3_finalize(stmt);
+                sqlite3_close(db);
+                return data_vec;
+            }
+        }
+    }
+
+    if (int_map.size()>0) {
+        for (const auto & map : int_map) {
+            if (sqlite3_bind_int(stmt, map.second, map.first) != SQLITE_OK) {
+                sqlite3_finalize(stmt);
+                sqlite3_close(db);
+                return data_vec;
+            }
+        }
+    }
+
+    if (double_map.size()>0) {
+        for (const auto & map : double_map) {
+            if (sqlite3_bind_double(stmt, map.second, map.first) != SQLITE_OK) {
+                sqlite3_finalize(stmt);
+                sqlite3_close(db);
+                return data_vec;
+            }
+        }
     }
 
     rc = sqlite3_step(stmt);
@@ -492,7 +515,6 @@ std::vector<std::string> lotman::Validator::SQL_get_matches(std::string query) {
         const unsigned char *_data = sqlite3_column_text(stmt, 0);
         std::string data(reinterpret_cast<const char *>(_data));
         data_vec.push_back(data);
-
         rc = sqlite3_step(stmt);
     }
     if (rc == SQLITE_DONE) {
