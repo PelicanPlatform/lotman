@@ -13,16 +13,33 @@ using namespace lotman;
  * Functions specific to Lot class
 */
 bool lotman::Lot::lot_exists(std::string lot_name) {
-
-    //std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name='" + lot_name + "';"; // TODO: reformat to prevent injection
     std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name = ?;";
     std::map<std::string, std::vector<int>> lot_exists_str_map{{lot_name, {1}}};
 
     return (lotman::Validator::SQL_get_matches(lot_exists_query, lot_exists_str_map).size()>0);
 }
 
+bool lotman::Lot::is_root(std::string lot_name) {
+    std::string is_root_query = "SELECT parent FROM parents WHERE lot_name = ?;"; 
+    std::map<std::string, std::vector<int>> is_root_query_str_map{{lot_name, {1}}};
+    std::vector<std::string> parents_vec = lotman::Validator::SQL_get_matches(is_root_query, is_root_query_str_map);
+    if (parents_vec.size()==1 && parents_vec[0]==lot_name) {
+        // lot_name has only itself as a parent
+        return true;
+    }
+
+    return false;
+}
+
 bool lotman::Lot::add_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::array paths, picojson::value management_policy_attrs) {
     // TODO: Error handling
+    // TODO: Check if LTBA is a root, and if yes, ensure it has a well-defined set of policies, OR decide to grab some stuff from default lot
+    // TODO: Update children when not an insertion
+    // TODO: Check if LTBA exists. If yes: fail
+
+    if (lot_exists(lot_name)) {
+        return false;
+    }
 
     // Check that any specified parents already exist, unless the lot has itself as parent
     for (auto & parents_iter : parents) {
@@ -74,12 +91,59 @@ bool lotman::Lot::add_lot(std::string lot_name, std::vector<std::string> owners,
     return store_lot_status;
 }
 
-bool lotman::Lot::remove_lot(std::string lot_name) {
+bool lotman::Lot::remove_lot(std::string lot_name, bool assign_default_as_parent_to_orphans, bool assign_default_as_parent_to_non_orphans, bool assign_LTBR_as_parent_to_orphans, bool assign_LTBR_as_parent_to_non_orphans, bool assign_policy_to_children) {
     // TODO: Handle all the weird things that can happen when removing a lot.
+    // TODO: Finish update_lot functions to perform updates to children. Right now, returns without error
+    
+    // Check that lot exists. Can't remove what isn't there
+    if (!lot_exists(lot_name)) {
+        return false;
+    }
+
+    // If lot has no children, it can be removed easily. If there are children, added care must be taken to prevent orphaning them.
+    std::vector<std::string> lot_children;
+    std::string children_query = "SELECT lot_name FROM parents WHERE parent = ?;";
+    std::map<std::string, std::vector<int>> children_query_str_map{{lot_name, {1}}};
+    lot_children = lotman::Validator::SQL_get_matches(children_query, children_query_str_map); // get all lots who specify lot-to-be-removed (LTBR) as a parent.
+                
+    for (auto & child : lot_children) {
+        std::cout << "In remove lot, here's a child: " << child << std::endl;
+    }
+
+    if (lot_children.size()==0) {
+        // No children to orphan, safe to delete lot
+        return delete_lot(lot_name);
+    }
+
+    if (assign_default_as_parent_to_children) {
+        // update parents of children to belong to 
+        // Only do this if the children don't have any other parents.
+    }
+
+
+
+
+
+
+
+
+
     return delete_lot(lot_name);
 
 }
 
+bool update_lot(std::string lot_name, 
+                std::map<std::string, std::string> owners_map = std::map<std::string, std::string>(), 
+                std::map<std::string, std::string> parents_map = std::map<std::string, std::string>(), 
+                std::map<std::string, std::string> children_map = std::map<std::string, std::string>(), 
+                std::map<std::string, int> paths_map = std::map<std::string, int>(), 
+                std::map<std::string, int> management_policy_attrs_int_map = std::map<std::string, int>(), 
+                std::map<std::string, double> management_policy_attrs_double_map = std::map<std::string, double>()) {
+
+    
+
+    return true;
+}
 
 std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name, bool get_root) {
     if (get_root) {

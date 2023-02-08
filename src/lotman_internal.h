@@ -24,16 +24,46 @@ class Lot {
     public:
         Lot() {}
         static bool lot_exists(std::string lot_name);
-        static bool add_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::array paths, picojson::value management_policy_attrs);
-        static bool remove_lot(std::string lot_name);
+        static bool is_root(std::string lot_name);
+        // TODO: change add_lot to take in a path_map and a management_policy_map. Front end all of the JSON parsing.
+        static bool add_lot(std::string lot_name, 
+                            std::vector<std::string> owners, 
+                            std::vector<std::string> parents, 
+                            std::vector<std::string> children, 
+                            picojson::array paths, 
+                            picojson::value management_policy_attrs);
+
+        static bool remove_lot(std::string lot_name, 
+                               bool assign_default_as_parent_to_orphans, 
+                               bool assign_default_as_parent_to_non_orphans, 
+                               bool assign_LTBR_as_parent_to_orphans, 
+                               bool assign_LTBR_as_parent_to_non_orphans, 
+                               bool assign_policy_to_children);
+
+        static bool update_lot(std::string lot_name, 
+                               std::map<std::string, std::string> owners_map = std::map<std::string, std::string>(), 
+                               std::map<std::string, std::string> parents_map = std::map<std::string, std::string>(), 
+                               std::map<std::string, std::string> children_map = std::map<std::string, std::string>(), 
+                               std::map<std::string, int> paths_map = std::map<std::string, int>(), 
+                               std::map<std::string, int> management_policy_attrs_int_map = std::map<std::string, int>(), 
+                               std::map<std::string, double> management_policy_attrs_double_map = std::map<std::string, double>());
+
         static std::vector<std::string> get_parent_names(std::string lot_name, bool get_root=false);
         //static std::vector<std::string> get_sublot_paths(std::string lot_path, bool recursive=false); // TODO: setting recursive to true gets ALL sublot paths of the supplied lot_path
-      
-    
-    private:
-        static bool store_lot(std::string lot_name, std::vector<std::string> owners, std::vector<std::string> parents, std::vector<std::string> children, picojson::array paths, picojson::value management_policy_attrs);
-        static bool delete_lot(std::string lot_name);
 
+    private:
+        static bool store_lot(std::string lot_name, 
+                              std::vector<std::string> owners, 
+                              std::vector<std::string> parents, 
+                              std::vector<std::string> children, 
+                              picojson::array paths, 
+                              picojson::value management_policy_attrs);
+
+        static bool delete_lot(std::string lot_name);
+        static bool modify_lot(std::string dynamic_query, 
+                               std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), 
+                               std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), 
+                               std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
 };
 
 /**

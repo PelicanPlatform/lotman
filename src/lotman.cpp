@@ -187,7 +187,7 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
     return 0;
 }
 
-int lotman_remove_lot(const char *lot_name, const char *lotman_context, char **err_msg) {
+int lotman_remove_lot(const char *lot_name, bool assign_default_as_parent_to_orphans, bool assign_default_as_parent_to_non_orphans, bool assign_LTBR_as_parent_to_orphans, bool assign_LTBR_as_parent_to_non_orphans, bool assign_policy_to_children, const char *lotman_context, char **err_msg) {
     // TODO: Check for context and figure out what to do with it
 
     if (!lot_name) {
@@ -196,7 +196,7 @@ int lotman_remove_lot(const char *lot_name, const char *lotman_context, char **e
     }
 
     try {
-        if (!lotman::Lot::remove_lot(lot_name)) {
+        if (!lotman::Lot::remove_lot(lot_name, assign_to_default)) {
             if (err_msg) {*err_msg = strdup("Failed to remove lot");}
             std::cout << "error: " << *err_msg << std::endl;
             return -1;

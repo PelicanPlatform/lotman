@@ -6,35 +6,6 @@
 
 namespace {
 
-// TODO: Set up tests to export LOT_HOME in test subdir of build
-// TODO: Make tests delete /build/.lot at the end so the InitializeRootLot test passes each time it's run
-
-
-
-    // TEST(LotManTest, InvalidInitializeRootLot) {
-    //     char *err_msg;
-    //     const char name[] = "Justin's Lot";
-    //     const char initialized_path[] = "/workspaces/lotman";
-    //     const char owner[] = "Justin";
-    //     const char users[] = "NULL";
-    //     const char reclamation_policy[] = "{\"reclamation_policy\":{\"creation_time\":\"NOW\",\"expiration_time\":\"TOMORROW\",\"deletion_time\":\"TWO DAYS\"}}";
-    //     const char resource_limits[] = "{\"resource_limits\":{\"dedicated_storage\":\"10GB\",\"opportunistic_storage\":\"5GB\"}}";
-
-    //     // Try to re-initialize the root lot
-    //     auto rv = lotman_initialize_root(initialized_path, owner, users, resource_limits, reclamation_policy, &err_msg);
-    //     ASSERT_FALSE(rv == 0);
-
-    //     // Try to add root lot below initialized root lot
-    //     const char downstream_path[] = "/workspaces/lotman/src";
-    //     rv = lotman_initialize_root(downstream_path, owner, users, resource_limits, reclamation_policy, &err_msg);
-    //     ASSERT_FALSE(rv == 0);
-        
-    //     // Try to add root lot above initialized root lot
-    //     const char upstream_path[] = "/workspaces";
-    //     rv = lotman_initialize_root(upstream_path, owner, users, resource_limits, reclamation_policy, &err_msg);
-    //     ASSERT_FALSE(rv == 0);
-    // }
-
     TEST(LotManTest, AddRemoveSublot) {
         char *err_msg;
         const char *context;
