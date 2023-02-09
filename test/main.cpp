@@ -16,7 +16,7 @@ namespace {
         ASSERT_TRUE(rv == 0);
     
         const char *deleted_lot = "lot1";
-        rv = lotman_remove_lot(deleted_lot, context, &err_msg);
+        rv = lotman_remove_lot(deleted_lot, true, true, true, true, true, context, &err_msg);
         ASSERT_TRUE(rv == 0);
 
         rv = lotman_lot_exists(deleted_lot, context, &err_msg);
@@ -48,22 +48,33 @@ namespace {
 
         // Try to add a lot with cyclic dependency
         // Cycle created by trying to add lot5 with lot1 as a child
-        const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot4\"],\"children\": [\"lot1\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
-        rv = lotman_add_lot(lot5, context, &err_msg);
+        const char *cyclic_lot = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot4\"],\"children\": [\"lot1\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        rv = lotman_add_lot(cyclic_lot, context, &err_msg);
         ASSERT_FALSE(rv == 0);
 
         // Try to add lot with no parent
-        const char *lot6 = "{\"lot_name\": \"lot6\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [],\"children\": [\"lot1\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
-        rv = lotman_add_lot(lot6, context, &err_msg);
+        const char *no_parents_lot = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [],\"children\": [\"lot1\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        rv = lotman_add_lot(no_parents_lot, context, &err_msg);
         ASSERT_FALSE(rv == 0);
     }
 
     TEST(LotManTest, InsertionTest) {
         // TODO: Insertion test -- set this up
         // Insertion: 3->4 :-> 3->5->4
-        const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot3\"],\"children\": [\"lot4\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        char *err_msg;
+        const char *context;
 
-        int rv = 0;
+        const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot3\"],\"children\": [\"lot4\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_storage_GB\":5,\"opportunistic_storage_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        int rv = lotman_add_lot(lot5, context, &err_msg);
+        ASSERT_TRUE(rv == 0);
+    }
+
+    TEST(LotManTest, ModifyLotTest) {
+        char *err_msg;
+        const char *context;
+
+        const char *modified_lot = "{ \"lot_name\": \"lot3\", \"owners\": [{\"Justin\":\"Not Justin\"}, {\"Brian\":\"Not Brian\"}],  \"parents\": [{\"lot3\":\"lot2\"}],  \"paths\": [{\"/another/path\":1},{\"/123\":0}], \"management_policy_attrs\": { \"dedicated_GB\":10.111,\"opportunistic_GB\":6.6,\"max_num_objects\":50,\"creation_time\":111,\"expiration_time\":222.111,\"deletion_time\":333}}";
+        int rv = lotman_update_lot(modified_lot, context, &err_msg);
         ASSERT_TRUE(rv == 0);
     }
 

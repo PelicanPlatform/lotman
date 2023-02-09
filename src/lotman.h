@@ -12,7 +12,7 @@ typedef void * Lot;
  * API for getting LotMan library version.
 */
 const char * lotman_version();
-
+int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg);
 
 /**
  * API for creating a "lot."
@@ -30,7 +30,7 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
  * OPTION assign_policy_to_children: If true, the policy attributes of all of LTBR's children will be overwritten with LTBR's policy attributes.
 */
 int lotman_remove_lot(const char *lot_name, bool assign_default_as_parent_to_orphans, bool assign_default_as_parent_to_non_orphans, bool assign_LTBR_as_parent_to_orphans, bool assign_LTBR_as_parent_to_non_orphans, bool assign_policy_to_children, const char *lotman_context, char **err_msg);
-int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg);
+int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
 // //int lotman_get_sublot_paths(const char *path, char **sublot_paths_arr, char **err_msg);
 
 

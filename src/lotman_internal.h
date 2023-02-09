@@ -43,7 +43,6 @@ class Lot {
         static bool update_lot(std::string lot_name, 
                                std::map<std::string, std::string> owners_map = std::map<std::string, std::string>(), 
                                std::map<std::string, std::string> parents_map = std::map<std::string, std::string>(), 
-                               std::map<std::string, std::string> children_map = std::map<std::string, std::string>(), 
                                std::map<std::string, int> paths_map = std::map<std::string, int>(), 
                                std::map<std::string, int> management_policy_attrs_int_map = std::map<std::string, int>(), 
                                std::map<std::string, double> management_policy_attrs_double_map = std::map<std::string, double>());
