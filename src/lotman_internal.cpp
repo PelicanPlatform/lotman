@@ -8,6 +8,7 @@
 
 using namespace lotman;
 
+// TODO: Go through and make things const where they shoudl be declared as such
 
 /**
  * Functions specific to Lot class
@@ -35,17 +36,28 @@ bool lotman::Lot::add_lot(std::string lot_name,
                           std::vector<std::string> owners, 
                           std::vector<std::string> parents, 
                           std::vector<std::string> children, 
-                          picojson::array paths, 
-                          picojson::value management_policy_attrs) {
+                          std::map<std::string, int> paths_map, 
+                          std::map<std::string, int> management_policy_attrs_int_map,
+                          std::map<std::string, double> management_policy_attrs_double_map) {
 
     // TODO: Error handling
     // TODO: Check if LTBA is a root, and if yes, ensure it has a well-defined set of policies, OR decide to grab some stuff from default lot
     // TODO: Update children when not an insertion
-    // TODO: Check if LTBA exists. If yes: fail
+    // TODO: Handle setup of default lot. Must be self parent, must have well-def'd policy, must be a root, etc. 
+    // TODO: If a lot is self-parent, it must have a well-def'd policy
+    
+    // Gaurantee that the default lot is the first lot created
+    if (lot_name != "default" && !lot_exists("default")) {
+        std::cout << "The default lot, named \"default\" must be established first." << std::endl;
+        return false;
+    }
 
     if (lot_exists(lot_name)) {
         return false;
     }
+
+    // Check if the lot is a self parent, and if so, require it has a well-def'd policy
+    //if (std::find)
 
     // Check that any specified parents already exist, unless the lot has itself as parent
     for (auto & parents_iter : parents) {
@@ -76,7 +88,7 @@ bool lotman::Lot::add_lot(std::string lot_name,
     
     }
 
-    int store_lot_status = store_lot(lot_name, owners, parents, children, paths, management_policy_attrs);
+    bool store_lot_status = store_lot(lot_name, owners, parents, paths_map, management_policy_attrs_int_map, management_policy_attrs_double_map);
 
     // If the lot is stored successfully, it's safe to start updating other lots to have correct info.
     if (store_lot_status) {
@@ -88,7 +100,6 @@ bool lotman::Lot::add_lot(std::string lot_name,
                     std::string parent_update_dynamic_query = "UPDATE parents SET parent=(?) WHERE lot_name=(?) AND parent=(?);";
                     std::map<std::string, std::vector<int>> parent_update_query_str_map{{children_iter, {2}}, {parents_iter, {3}}, {lot_name, {1}}};
                     parent_updated = store_modifications(parent_update_dynamic_query, parent_update_query_str_map);
-                    //parent_updated = lotman::Validator::SQL_update_parent(children_iter, parents_iter, lot_name);
                     if (!parent_updated) { // Something went wrong, abort
                         //remove_lot(lot_name);
                         return false;
@@ -101,17 +112,25 @@ bool lotman::Lot::add_lot(std::string lot_name,
 }
 
 bool lotman::Lot::remove_lot(std::string lot_name, 
-                             bool assign_default_as_parent_to_orphans, 
-                             bool assign_default_as_parent_to_non_orphans, 
-                             bool assign_LTBR_as_parent_to_orphans, 
-                             bool assign_LTBR_as_parent_to_non_orphans, 
+                             bool assign_LTBR_parent_as_parent_to_orphans, 
+                             bool assign_LTBR_parent_as_parent_to_non_orphans, 
                              bool assign_policy_to_children) {
 
     // TODO: Handle all the weird things that can happen when removing a lot.
     // TODO: Finish update_lot functions to perform updates to children. Right now, returns without error
+    // TODO: Consider order of operations and/or thread safety for this. Currently, remove_lot does any updating to children before it deletes the lot,
+    //       and in the event that the children are updated but the lot cannot be deleted, the data's structure may become corrupt and unrecoverable.
+    //       My current thought is that the function could write a temporary recovery file to disk that backs up any data entries that are to be modified,
+    //       and then delete it after everythind finishes successfully. In the event of a crash, a special lotman_recover_db function could check for recovery
+    //       files, whose existence indicates there was some kind of crash, and then perform the restoration based on what is in the temp file.
     
     // Check that lot exists. Can't remove what isn't there
     if (!lot_exists(lot_name)) {
+        std::cout << "Lot does not exist, and cannot be removed" << std::endl;
+        return false;
+    }
+    if (lot_name == "default") {
+        std::cout << "The default lot cannot be deleted" << std::endl;
         return false;
     }
 
@@ -130,6 +149,34 @@ bool lotman::Lot::remove_lot(std::string lot_name,
         return delete_lot(lot_name);
     }
 
+    for (auto & child : lot_children) {
+        if (lotman::Validator::will_be_orphaned(lot_name, child)) {
+            if (assign_LTBR_parent_as_parent_to_orphans) {
+                if (is_root(lot_name)) {
+                    std::cout << "The lot being removed is a root, and has no parents to assign to its children." << std::endl;
+                    return false;
+                }
+                std::vector<std::string> LTBR_owners_vec = lotman::Lot::get_owners(lot_name);
+                std::vector<std::string> LTBR_parents_vec = lotman::Lot::get_parent_names(lot_name);
+                add_to_lot(child, LTBR_owners_vec, LTBR_parents_vec);
+            }
+            else {
+                std::cout << "The operation cannot be completed beacuse deleting the lot would create an orphan that requires explicit assignment to the default lot. Set assign_LTBR_parent_as_parent_to_orphans=true" << std::endl;
+            }
+        }
+        else {
+            if (assign_LTBR_parent_as_parent_to_non_orphans) {
+                if (is_root(lot_name)) {
+                    std::cout << "The lot being removed is a root, and has no parents to assign to its children." << std::endl;
+                    return false;
+                }
+                std::vector<std::string> LTBR_owners_vec = lotman::Lot::get_owners(lot_name);
+                std::vector<std::string> LTBR_parents_vec = lotman::Lot::get_parent_names(lot_name);
+                add_to_lot(child, LTBR_owners_vec, LTBR_parents_vec);
+            }
+
+        }
+    }
 
     return delete_lot(lot_name);
 
@@ -142,7 +189,7 @@ bool lotman::Lot::update_lot(std::string lot_name,
                 std::map<std::string, int> management_policy_attrs_int_map, 
                 std::map<std::string, double> management_policy_attrs_double_map) {
     if (!lot_exists(lot_name)) {
-        std::cout << "Lot does not exist" << std::endl;
+        std::cout << "Lot does not exist so it cannot be updated" << std::endl;
         return false;
     }
 
@@ -209,7 +256,7 @@ bool lotman::Lot::update_lot(std::string lot_name,
             }
         }
         else {
-            std::cout << "The key: " << key.first << " is not a valid key" << std::endl;
+            std::cout << "The key: " << key.first << " is not a recognized key" << std::endl;
             return false;
         }
     }
@@ -228,7 +275,7 @@ bool lotman::Lot::update_lot(std::string lot_name,
             }
         }
         else {
-            std::cout << "The key: " << key.first << " is not a valid key" << std::endl;
+            std::cout << "The key: " << key.first << " is not a recognized key" << std::endl;
             return false;
         }
     }
@@ -236,27 +283,60 @@ bool lotman::Lot::update_lot(std::string lot_name,
     return true;
 }
 
+bool lotman::Lot::add_to_lot(std::string lot_name,
+                             std::vector<std::string> owners,
+                             std::vector<std::string> parents,
+                            std::map<std::string, int> paths_map) {
+        if (!store_new_rows(lot_name, owners, parents, paths_map)) {
+            return false;
+        }
+    return true;
+}
+
 std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name,
-                                                       bool get_root) {
-    if (get_root) {
-        std::cout << "TODO: Build get_root recursive mode for parents query" << std::endl;
+                                                       bool recursive,
+                                                       bool get_self) {
+    if (recursive) {
+        std::cout << "TODO: Build recursive mode for get_parent_names" << std::endl;
         return std::vector<std::string>();
     }
 
-    std::string parents_query = "SELECT parent FROM parents WHERE lot_name = ? AND parent != ?;"; 
-    std::map<std::string, std::vector<int>> parents_query_str_map{{lot_name, {1,2}}};
+    std::string parents_query;
+    std::map<std::string, std::vector<int>> parents_query_str_map;
+    if (get_self) {
+        parents_query = "SELECT parent FROM parents WHERE lot_name = ?;"; 
+        parents_query_str_map = {{lot_name, {1}}};
+    }
+    else {
+        parents_query = "SELECT parent FROM parents WHERE lot_name = ? AND parent != ?;"; 
+        parents_query_str_map = {{lot_name, {1,2}}};
+    }
     std::vector<std::string> lot_parents_vec = lotman::Validator::SQL_get_matches(parents_query, parents_query_str_map);
 
     return lot_parents_vec;
 }
 
+std::vector<std::string> lotman::Lot::get_owners(std::string lot_name,
+                                                 bool recursive) {
+    if (recursive) {
+        std::cout << "TODO: Build recursive mode for get_owners" << std::endl;
+        return std::vector<std::string>();
+    }
 
+    std::string owners_query = "SELECT owner FROM owners WHERE lot_name = ?;"; 
+    std::map<std::string, std::vector<int>> owners_query_str_map{{lot_name, {1}}};
+    std::vector<std::string> lot_parents_vec = lotman::Validator::SQL_get_matches(owners_query, owners_query_str_map);
 
+    return lot_parents_vec;
+}
+                                                 
 /**
  * Functions specific to Validator class
 */
 
-bool lotman::Validator::cycle_check(std::string start_node, std::vector<std::string> start_parents, std::vector<std::string> start_children) { // Returns true if invalid cycle is detected, else returns false
+bool lotman::Validator::cycle_check(std::string start_node,
+                                    std::vector<std::string> start_parents, 
+                                    std::vector<std::string> start_children) { // Returns true if invalid cycle is detected, else returns false
     // Basic DFS algorithm to check for cycle creation when adding a lot that has both parents and children.
 
     // Algorithm initialization
@@ -288,7 +368,9 @@ bool lotman::Validator::cycle_check(std::string start_node, std::vector<std::str
     return false;
 }
 
-bool lotman::Validator::insertion_check(std::string LTBA, std::string parent, std::string child) { // Checks whether LTBA is being inserted between a parent and child.
+bool lotman::Validator::insertion_check(std::string LTBA, 
+                                        std::string parent, 
+                                        std::string child) { // Checks whether LTBA is being inserted between a parent and child.
     std::vector<std::string> parents_vec = lotman::Lot::get_parent_names(child);
     auto parent_iter = std::find(parents_vec.begin(), parents_vec.end(), parent); // Check if the specified parent is listed as a parent to the child
     if (!(parent_iter == parents_vec.end())) { 
@@ -298,6 +380,13 @@ bool lotman::Validator::insertion_check(std::string LTBA, std::string parent, st
     return false;
 }
 
-
+bool lotman::Validator::will_be_orphaned(std::string LTBR, 
+                                         std::string child) {
+    std::vector<std::string> parents_vec = lotman::Lot::get_parent_names(child);
+    if (parents_vec.size()==1 && parents_vec[0]==LTBR) {
+        return true;
+    }
+    return false;
+}
 
     

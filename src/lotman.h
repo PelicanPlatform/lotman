@@ -19,19 +19,31 @@ int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **e
  * Takes in a JSON lot object as a string and attempts to create the lot as defined by the JSON object.
  * Returns 0 upon success, nonzero for failure.
 */
-
 int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
+
 /**
- * API for deleting a lot. 
- * OPTION assign_default_as_parent_to_orphans: If true, any lots that would be orphaned by removing the lot-to-be-removed (LTBR) will be updated to have default as a parent.
- * OPTION assign_default_as_parent_to_non_orphans: If true, any non-orphans (ie lots who have parents aside from LTBR) will be updated to have default as a parent.
- * OPTION assign_LTBR_as_parent_to_orphans: If true, any orphaned lots will be updated to have LTBR's parents as parents.
- * OPTION assign_LTBR_as_parent_to_non_orphans: If true, any non-orphans will be updated to have LTBR's parents as parents.
+ * API for deleting a lot. LTBR = lot-to-be-removed.
+ * OPTION assign_LTBR_parent_as_parent_to_orphans: If true, any lots whose only parent is currently LTBR will be reassigned to have LTBR's parents as explicit parents.
+ *         If false, any orphans will automatically be reassigned to have the default lot as a parent.
+ *         NOTE: If LTBR is a root (ie it has only itself as a parent) and this option is true, the function should fail with an indication that the child could not be 
+ *               reassigned because LTBR has no parents. This is to explicity ensure the user is aware the orphans must be reassigned to the default lot.
+ * OPTION assign_LTBR_parent_as_parent_to_non_orphans: If true, any non-orphans will be updated to have LTBR's parents as explicit parents. If false, LTBR will be removed as 
+ *         a parent from the non-orphaned children and no extra parents will be added. 
+ *         NOTE: If a child of LTBR has only LTBR and itself as a parent, setting this option to false will cause that child to become a root.
+ *         NOTE: If LTBR is a root and this option is true, the function should fail with an indication that the child could not be reassigned because LTBR has no parents.
  * OPTION assign_policy_to_children: If true, the policy attributes of all of LTBR's children will be overwritten with LTBR's policy attributes.
 */
-int lotman_remove_lot(const char *lot_name, bool assign_default_as_parent_to_orphans, bool assign_default_as_parent_to_non_orphans, bool assign_LTBR_as_parent_to_orphans, bool assign_LTBR_as_parent_to_non_orphans, bool assign_policy_to_children, const char *lotman_context, char **err_msg);
+int lotman_remove_lot(const char *lot_name, bool assign_LTBR_parent_as_parent_to_orphans, bool assign_LTBR_parent_as_parent_to_non_orphans, bool assign_policy_to_children, const char *lotman_context, char **err_msg);
 int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
-// //int lotman_get_sublot_paths(const char *path, char **sublot_paths_arr, char **err_msg);
+int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg);
+int lotman_is_root(const char *lot_name, char **err_msg);
+int lotman_get_owners(const char *lot_name, bool recursive, char **err_msg);
+int lotman_get_parent_names(const char *lot_name, bool recursive, char **err_msg);
+int lotman_get_children_names(const char *lot_name, bool recursive, char **err_msg);
+int lotman_get_policy_attributes(const char *lot_name, const char *policy_attributes_JSON, bool recursive, char **err_msg);
+int lotman_get_lot_dirs(const char *lot_name, bool recursive, char **err_msg);
+int lotman_get_matching_lots(const char *criteria_JSON, bool recursive, char **err_msg);
+int lotman_check_db_health(char **err_msg);
 
 
 #ifdef __cplusplus

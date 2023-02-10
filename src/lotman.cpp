@@ -15,49 +15,9 @@ const char * lotman_version() {
     return version.c_str();
 }
 
-    
-// int lotman_initialize_root(const char *name, const char *path, const char *owner, const char *resource_limits, const char *reclamation_policy, char **err_msg) {
-//     if (!path) {
-//         if (err_msg) {*err_msg = strdup("The path for the root lot must not be a null pointer");}
-//         return -1;
-//     }
-//     // If the provided name is a nullpointer, use the path as a name
-//     const char *real_name;
-//     if (!name) {
-//         real_name = path;
-//     }
-//     else if (name) {
-//         real_name = name;
-//     }
-    
-//     if (!owner) {
-//         if (err_msg) {*err_msg = strdup("The owner for the root lot must not be a null pointer");}
-//         return -1;
-//     }
-//     if (!resource_limits) {
-//         if (err_msg) {*err_msg = strdup("The resource_limits pointer must not be null");}
-//         return -1;
-//     }    
-//     if (!reclamation_policy) {
-//         if (err_msg) {*err_msg = strdup("The reclamation_policy pointer must not be null");}
-//         return -1;
-//     }
-
-//     try {
-//         if (!lotman::Lot::initialize_root(name, path, owner, resource_limits, reclamation_policy)) {
-//             if (err_msg) {*err_msg = strdup("Failed to initialize the root lot.");}
-//             return -1;
-//         }
-//     }
-//     catch(std::exception &exc) {
-//         if (err_msg) {*err_msg = strdup(exc.what());}
-//         return -1;
-//     }
-//     return 0;
-// }
-
-
-int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg) {
+int lotman_add_lot(const char *lotman_JSON_str, 
+                   const char *lotman_context, 
+                   char **err_msg) {
     // TODO: Check for context and figure out what to do with it
     
     picojson::value lotman_JSON;
@@ -81,8 +41,10 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
 
     std::string lot_name;
     std::vector<std::string> owners, parents, children;
-    picojson::value management_policy_attrs;
-    picojson::array paths;
+    std::map<std::string, int> management_policy_attrs_int_map, paths_map;
+    std::map<std::string, double> management_policy_attrs_double_map;
+    //picojson::value management_policy_attrs;
+    //picojson::array paths;
     for (iter; iter != lot_obj.end(); ++iter) {
         auto first_item = iter->first; 
         auto second_item = iter->second; 
@@ -94,7 +56,7 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
             }
             lot_name = second_item.get<std::string>();
         }
-        if (first_item == "owners") { 
+        else if (first_item == "owners") { 
             if (!second_item.is<picojson::array>()) { // TODO: Since second_item is already a vector, no need to create a second owners vec.
                 std::cerr << "Something is wrong -- owners array is not array." << std::endl;
                 return -1;
@@ -112,7 +74,7 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
                 owners.push_back(owners_iter.get<std::string>());
             }
         }
-        if (first_item == "parents") {
+        else if (first_item == "parents") {
             if (!second_item.is<picojson::array>()) {
                 std::cerr << "Something is wrong -- parents array is not array." << std::endl;
                 return -1; 
@@ -130,7 +92,7 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
                 parents.push_back(parents_iter.get<std::string>());
             }
         }
-        if (first_item == "children") {
+        else if (first_item == "children") {
             if (!second_item.is<picojson::array>()) {
                 std::cerr << "Something is wrong -- children array is not array." << std::endl;
                 return -1; 
@@ -149,31 +111,82 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
             }
         }
 
-        if (first_item == "management_policy_attrs") {
+        else if (first_item == "management_policy_attrs") {
             if (!second_item.is<picojson::object>()) {
                 std::cerr << "Something is wrong -- management_policy_attrs appears to be malformed." << std::endl;
                 return -1;
             }
-            management_policy_attrs = second_item;
-        }
 
-        if (first_item == "paths") {
-            if (!second_item.is<picojson::array>()) {
-                std::cerr << "Something is wrong -- paths array is not recognized as an array." << std::endl;
-                return -1; 
-            }
-            auto paths_array = second_item.get<picojson::array>();
-            if (paths_array.empty()) {
-                std::cerr << "Something is wrong -- no paths were found in the path array." << std::endl;
+            auto management_policy_attrs = second_item.get<picojson::object>();
+            auto management_policy_attrs_iter = management_policy_attrs.begin();
+            if (management_policy_attrs_iter == management_policy_attrs.end()) {
+                std::cerr << "Management policy attributes object appears empty" << std::endl;
                 return -1;
             }
-            paths = paths_array;
+            for (management_policy_attrs_iter; management_policy_attrs_iter != management_policy_attrs.end(); ++management_policy_attrs_iter) {
+                std::array<std::string, 2> double_attributes{"dedicated_GB", "opportunistic_GB"};
+                std::array<std::string, 4> int_attributes{"max_num_objects", "creation_time", "expiration_time", "deletion_time"};
+                if (std::find(double_attributes.begin(), double_attributes.end(), management_policy_attrs_iter->first) !=double_attributes.end()) {
+                    if (!management_policy_attrs_iter->second.is<double>()) {
+                        std::cerr << "The value provided for: " << management_policy_attrs_iter->first << " is not recognized as a number" << std::endl;
+                        return -1;
+                    }
+                    management_policy_attrs_double_map[management_policy_attrs_iter->first] = management_policy_attrs_iter->second.get<double>();
+                }
+                else if (std::find(int_attributes.begin(), int_attributes.end(), management_policy_attrs_iter->first) != int_attributes.end()) {
+                    if (!management_policy_attrs_iter->second.is<double>()) {
+                        std::cerr << "The value provided for: " << management_policy_attrs_iter->first << " is not recognized as a number" << std::endl;
+                        return -1;
+                    }
+                    management_policy_attrs_int_map[management_policy_attrs_iter->first] = management_policy_attrs_iter->second.get<double>();
+                }
+
+                else {
+                    std::cout << "management policy key not recognized" << management_policy_attrs_iter->first << std::endl;
+                    return -1;
+                }
+            }
         }
 
+        else if (first_item == "paths") {
+            if (!second_item.is<picojson::array>()) {
+                std::cout << "Second item not recognized as array" << std::endl;
+                return -1;
+            }
+
+            picojson::array paths_array = second_item.get<picojson::array>();
+            if (paths_array.empty()) {
+                std::cerr << "second item empty" << std::endl;
+                return -1;
+            }
+
+            for (auto & paths_array_iter : paths_array) {
+                if (!paths_array_iter.is<picojson::object>()) {
+                    std::cerr << "in the paths array, entry is not an object" << std::endl;
+                    return -1;
+                }
+                picojson::object path_update_obj = paths_array_iter.get<picojson::object>();
+                auto path_update_obj_iter = path_update_obj.begin();
+                if (path_update_obj_iter == path_update_obj.end()) {
+                    std::cerr << "path update obj appears empty" << std::endl;
+                    return -1;
+                }
+                for (path_update_obj_iter; path_update_obj_iter != path_update_obj.end(); ++path_update_obj_iter) {
+                    if (!path_update_obj_iter->second.is<double>()) {
+                        std::cerr << "A recursion flag for the path: " << path_update_obj_iter->first << "is not recognized as a number" << std::endl;
+                        return -1;
+                    }
+                    paths_map[path_update_obj_iter->first] = path_update_obj_iter->second.get<double>();
+                }
+            } 
+        }
+        else {
+            std::cout << "An unrecognized key was provdided: " << first_item << std::endl;
+        }
     }
 
     try {
-        if (!lotman::Lot::add_lot(lot_name, owners, parents, children, paths, management_policy_attrs)) {
+        if (!lotman::Lot::add_lot(lot_name, owners, parents, children, paths_map, management_policy_attrs_int_map, management_policy_attrs_double_map)) {
             if (err_msg) {*err_msg = strdup("Failed to add lot");}
             std::cout << "error: " << *err_msg << std::endl;
             return -1;
@@ -187,7 +200,12 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
     return 0;
 }
 
-int lotman_remove_lot(const char *lot_name, bool assign_default_as_parent_to_orphans, bool assign_default_as_parent_to_non_orphans, bool assign_LTBR_as_parent_to_orphans, bool assign_LTBR_as_parent_to_non_orphans, bool assign_policy_to_children, const char *lotman_context, char **err_msg) {
+int lotman_remove_lot(const char *lot_name, 
+                      bool assign_LTBR_parent_as_parent_to_orphans, 
+                      bool assign_LTBR_parent_as_parent_to_non_orphans, 
+                      bool assign_policy_to_children, 
+                      const char *lotman_context, 
+                      char **err_msg) {
     // TODO: Check for context and figure out what to do with it
 
     if (!lot_name) {
@@ -196,7 +214,7 @@ int lotman_remove_lot(const char *lot_name, bool assign_default_as_parent_to_orp
     }
 
     try {
-        if (!lotman::Lot::remove_lot(lot_name, true, true, true, true, true)) {
+        if (!lotman::Lot::remove_lot(lot_name, assign_LTBR_parent_as_parent_to_orphans, assign_LTBR_parent_as_parent_to_non_orphans, assign_policy_to_children)) {
             if (err_msg) {*err_msg = strdup("Failed to remove lot");}
             std::cout << "error: " << *err_msg << std::endl;
             return -1;
@@ -210,7 +228,9 @@ int lotman_remove_lot(const char *lot_name, bool assign_default_as_parent_to_orp
     return 0;
 }
 
-int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg) {
+int lotman_update_lot(const char *lotman_JSON_str, 
+                      const char *lotman_context,
+                      char **err_msg) {
     picojson::value lotman_JSON;
     std::string err = picojson::parse(lotman_JSON, lotman_JSON_str);
     if (!err.empty()) {
@@ -246,7 +266,7 @@ int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, c
             }
             lot_name = second_item.get<std::string>();
         }
-        if (first_item == "owners") {
+        else if (first_item == "owners") {
             if (!second_item.is<picojson::array>()) {
                 std::cout << "Second item not recognized as array" << std::endl;
                 return -1;
@@ -276,7 +296,7 @@ int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, c
             
         }
 
-        if (first_item == "parents") {
+        else if (first_item == "parents") {
             if (!second_item.is<picojson::array>()) {
                 std::cout << "Second item not recognized as array" << std::endl;
                 return -1;
@@ -306,7 +326,7 @@ int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, c
             
         }
 
-        if (first_item == "management_policy_attrs") {
+        else if (first_item == "management_policy_attrs") {
             if (!second_item.is<picojson::object>()) {
                 std::cerr << "management policy object is not an object" << std::endl;
                 return -1;
@@ -336,7 +356,7 @@ int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, c
             }
         }
 
-        if (first_item == "paths") {
+        else if (first_item == "paths") {
             if (!second_item.is<picojson::array>()) {
                 std::cout << "Second item not recognized as array" << std::endl;
                 return -1;
@@ -362,10 +382,11 @@ int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, c
                 for (path_update_obj_iter; path_update_obj_iter != path_update_obj.end(); ++path_update_obj_iter) {
                     paths_map[path_update_obj_iter->first] = path_update_obj_iter->second.get<double>();
                 }
-            }
-            
+            } 
         }
-
+        else {
+            std::cout << "An unrecognized key was provdided: " << first_item << std::endl;
+        }
     }
 
     try {
@@ -386,7 +407,9 @@ int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, c
 
 }
 
-int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg) {
+int lotman_lot_exists(const char *lot_name, 
+                      const char *lotman_context, 
+                      char **err_msg) {
     if (!lot_name) {
         if (err_msg) {*err_msg = strdup("Name for lot to be removed must not be nullpointer.");}
         return -1;
@@ -394,27 +417,44 @@ int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **e
     return lotman::Lot::lot_exists(lot_name);
 }
 
-
-
-
-
-/*
-
-int lotman_get_sublot_paths(const char *path, char **sublot_paths_arr, char **err_msg) {
-    if (!path) {
-        if (err_msg) {*err_msg = strdup("Path for input lot must not be nullpointer.");}
-        return -1;
-    }
-    if (!sublot_paths_arr) {
-        if (err_msg) {*err_msg = strdup("Sublot output pointer must not be null.");}
-    }
-
-    try {
-
-        std::vector<std::string> sublot_paths_vec{lotman::Lot::get_sublot_paths(path)};
-        *sublot_paths_arr 
-    }
+int lotman_get_owners(const char *lot_name, 
+                      bool recursive, 
+                      char **err_msg) {
+    return false;
 }
 
-*/
+int lotman_get_parent_names(const char *lot_name, 
+                            bool recursive, 
+                            char **err_msg){
+    return false;
+}
+
+int lotman_get_children_names(const char *lot_name, 
+                              bool recursive, 
+                              char **err_msg) {
+    return false;
+}
+
+int lotman_get_policy_attributes(const char *lot_name, 
+                                 const char *policy_attributes_JSON, 
+                                 bool recursive, 
+                                 char **err_msg) {
+    return false;
+}
+
+int lotman_get_lot_dirs(const char *lot_name, 
+                        bool recursive, 
+                        char **err_msg) {
+    return false;
+}
+
+int lotman_get_matching_lots(const char *criteria_JSON, 
+                            bool recursive, 
+                            char **err_msg) {
+    return false;
+}
+
+int lotman_check_db_health(char **err_msg) {
+    return false;
+}
 
