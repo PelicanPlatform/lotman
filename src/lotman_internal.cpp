@@ -141,7 +141,11 @@ bool lotman::Lot::update_lot(std::string lot_name,
                 std::map<std::string, int> paths_map, 
                 std::map<std::string, int> management_policy_attrs_int_map, 
                 std::map<std::string, double> management_policy_attrs_double_map) {
-    
+    if (!lot_exists(lot_name)) {
+        std::cout << "Lot does not exist" << std::endl;
+        return false;
+    }
+
     // For each change in each map, store the change.
     std::string owners_update_dynamic_query = "UPDATE owners SET owner=? WHERE lot_name=? AND owner=?;";
     for (auto & key : owners_map) {
@@ -232,7 +236,8 @@ bool lotman::Lot::update_lot(std::string lot_name,
     return true;
 }
 
-std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name, bool get_root) {
+std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name,
+                                                       bool get_root) {
     if (get_root) {
         std::cout << "TODO: Build get_root recursive mode for parents query" << std::endl;
         return std::vector<std::string>();
@@ -244,11 +249,6 @@ std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name, boo
 
     return lot_parents_vec;
 }
-
-// std::vector<std::string> lotman::Lot::get_sublot_paths(std::string lot_path, bool recursive) {
-//     std::vector<std::string> sublot_paths = lotman::Validator::get_child_dirs(lot_path, recursive);
-//     return sublot_paths;
-// }
 
 
 
@@ -299,47 +299,5 @@ bool lotman::Validator::insertion_check(std::string LTBA, std::string parent, st
 }
 
 
-
-// bool lotman::Validator::check_for_parent_child_dirs(std::string lot_path) {
-//     std::string is_parent_dir_query = "SELECT path FROM lot WHERE path LIKE '" + lot_path + "%';";
-//     std::string is_child_dir_query = "SELECT path FROM lot WHERE path=SUBSTRING('" + lot_path + "',1,LENGTH(PATH));";
-
-//     int total_matches = SQL_match_exists(is_parent_dir_query) + SQL_match_exists(is_child_dir_query);
-//     if (total_matches > 0) {return false;}
-
-//     return true;
-// }
-
-
-// std::vector<std::string> lotman::Validator::get_parent_names(std::string parent, bool get_root) {
-//     std::string parent_query;
-
-//     if (get_root) {
-//         // TODO: Finish this part
-//         std::cout << "You haven't written the code to get the root parent name!!" << std::endl;
-//     }
-//     else {
-//         parent_query = "SELECT lot_name FROM lot WHERE lot_name=\"" + parent + "\";";
-
-//     }
-
-//     std::vector<std::string> parent_path_vec = lotman::Validator::SQL_get_matches(parent_query);
-//     return parent_path_vec;
-// }
-
-
-// std::vector<std::string> lotman::Validator::get_child_dirs(std::string lot_path, bool recursive) {
-//     std::string children_query;
-//     if (recursive) {
-//         // TODO: Set up this recursive mode
-//         std::cout << "YOU HAVEN'T BUILT RECURSIVE MODE YET" << std::endl;
-//     }
-//     else {
-//         children_query = "SELECT path FROM lot WHERE path LIKE '"+ lot_path + "/%';";
-//     }
-
-//     std::vector<std::string> child_paths = lotman::Validator::SQL_get_matches(children_query);
-//     return child_paths;
-// }
 
     
