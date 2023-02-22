@@ -61,7 +61,12 @@ class Lot {
 
 
         static std::vector<std::string> get_children_names(std::string lot_name,
-                                                           bool recursive=false);
+                                                           const bool recursive=false,
+                                                           const bool get_self=false);
+                                                        
+        static picojson::object get_restricting_attribute(const std::string lot_name,
+                                                          const std::string key,
+                                                          const bool recursive);
         
 
     private:

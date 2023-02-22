@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <stdio.h>
 #include <iostream>
 #include <picojson.h>
 #include <sqlite3.h>
+//#include <string>
 //#include <vector>
 
 #include "lotman_internal.h"
@@ -45,6 +47,7 @@ bool lotman::Lot::add_lot(std::string lot_name,
     // TODO: Update children when not an insertion
     // TODO: Handle setup of default lot. Must be self parent, must have well-def'd policy, must be a root, etc. 
     // TODO: If a lot is self-parent, it must have a well-def'd policy
+    // TODO: Should we allow attaching a path to more than one lot? If not, we need a check.
     
     // Gaurantee that the default lot is the first lot created
     if (lot_name != "default" && !lot_exists("default")) {
@@ -296,11 +299,8 @@ bool lotman::Lot::add_to_lot(std::string lot_name,
 std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name,
                                                        bool recursive,
                                                        bool get_self) {
-    if (recursive) {
-        std::cout << "TODO: Build recursive mode for get_parent_names" << std::endl;
-        return std::vector<std::string>();
-    }
-
+    
+    std::vector<std::string> lot_parents_vec;
     std::string parents_query;
     std::map<std::string, std::vector<int>> parents_query_str_map;
     if (get_self) {
@@ -311,25 +311,125 @@ std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name,
         parents_query = "SELECT parent FROM parents WHERE lot_name = ? AND parent != ?;"; 
         parents_query_str_map = {{lot_name, {1,2}}};
     }
-    std::vector<std::string> lot_parents_vec = lotman::Validator::SQL_get_matches(parents_query, parents_query_str_map);
+    lot_parents_vec = lotman::Validator::SQL_get_matches(parents_query, parents_query_str_map);
+    
+    if (recursive) {
+        std::vector<std::string> current_parents{lot_parents_vec};
+        parents_query = "SELECT parent FROM parents WHERE lot_name = ? AND parent != ?;"; 
+        while (current_parents.size()>0) {
+            std::vector<std::string> grandparents;
+            for (const auto &parent : current_parents) {
+                parents_query_str_map = {{parent, {1,2}}};
+                std::vector<std::string> tmp{lotman::Validator::SQL_get_matches(parents_query, parents_query_str_map)};
+                grandparents.insert(grandparents.end(), tmp.begin(), tmp.end());
+            }
+            current_parents = grandparents;
+            lot_parents_vec.insert(lot_parents_vec.end(), grandparents.begin(), grandparents.end());
+        }
+    }
 
+    // Sort and remove any duplicates
+    std::sort(lot_parents_vec.begin(), lot_parents_vec.end());
+    auto last = std::unique(lot_parents_vec.begin(), lot_parents_vec.end());
+    lot_parents_vec.erase(last, lot_parents_vec.end());
     return lot_parents_vec;
 }
 
 std::vector<std::string> lotman::Lot::get_owners(std::string lot_name,
                                                  bool recursive) {
+    std::string owners_query = "SELECT owner FROM owners WHERE lot_name = ?;"; 
+
+    std::map<std::string, std::vector<int>> owners_query_str_map{{lot_name, {1}}};
+    std::vector<std::string> lot_owners_vec = lotman::Validator::SQL_get_matches(owners_query, owners_query_str_map);
+
     if (recursive) {
-        std::cout << "TODO: Build recursive mode for get_owners" << std::endl;
-        return std::vector<std::string>();
+        std::vector<std::string> parents_vec{get_parent_names(lot_name, true, false)};
+        for (const auto &parent : parents_vec) {
+            std::map<std::string, std::vector<int>> owners_query_str_map{{parent, {1}}};
+            std::vector<std::string> tmp{lotman::Validator::SQL_get_matches(owners_query, owners_query_str_map)};
+            lot_owners_vec.insert(lot_owners_vec.end(), tmp.begin(), tmp.end());
+        }
+
     }
 
-    std::string owners_query = "SELECT owner FROM owners WHERE lot_name = ?;"; 
-    std::map<std::string, std::vector<int>> owners_query_str_map{{lot_name, {1}}};
-    std::vector<std::string> lot_parents_vec = lotman::Validator::SQL_get_matches(owners_query, owners_query_str_map);
-
-    return lot_parents_vec;
+    // Sort and remove any duplicates
+    std::sort(lot_owners_vec.begin(), lot_owners_vec.end());
+    auto last = std::unique(lot_owners_vec.begin(), lot_owners_vec.end());
+    lot_owners_vec.erase(last, lot_owners_vec.end());
+    return lot_owners_vec;
 }
-                                                 
+
+std::vector<std::string> lotman::Lot::get_children_names(std::string lot_name,
+                                                         const bool recursive,
+                                                         const bool get_self) {
+    std::vector<std::string> lot_children_vec;
+    std::string children_query;
+    std::map<std::string, std::vector<int>> children_query_str_map;
+    if (get_self) {
+        children_query = "SELECT lot_name FROM parents WHERE parent = ?;"; 
+        children_query_str_map = {{lot_name, {1}}};
+    }
+    else {
+        children_query = "SELECT lot_name FROM parents WHERE parent = ? and lot_name != ?;"; 
+        children_query_str_map = {{lot_name, {1,2}}};
+    }
+    lot_children_vec = lotman::Validator::SQL_get_matches(children_query, children_query_str_map);
+
+    if (recursive) {
+        std::vector<std::string> current_children{lot_children_vec};
+        children_query = "SELECT lot_name FROM parents WHERE parent = ? AND lot_name != ?;"; 
+        while (current_children.size()>0) {
+            std::vector<std::string> grandchildren;
+            for (const auto &child : current_children) {
+                children_query_str_map = {{child, {1,2}}};
+                std::vector<std::string> tmp{lotman::Validator::SQL_get_matches(children_query, children_query_str_map)};
+                grandchildren.insert(grandchildren.end(), tmp.begin(), tmp.end());
+            }
+            current_children = grandchildren;
+            lot_children_vec.insert(lot_children_vec.end(), grandchildren.begin(), grandchildren.end());
+        }
+    }
+
+    // Sort and remove any duplicates
+    std::sort(lot_children_vec.begin(), lot_children_vec.end());
+    auto last = std::unique(lot_children_vec.begin(), lot_children_vec.end());
+    lot_children_vec.erase(last, lot_children_vec.end());
+    return lot_children_vec;
+}                                              
+
+picojson::object lotman::Lot::get_restricting_attribute(const std::string lot_name,
+                                                        const std::string key,
+                                                        const bool recursive) {
+    picojson::object internal_obj;
+    std::vector<std::string> value;
+    std::array<std::string, 6> allowed_keys{{"dedicated_GB", "opportunistic_GB", "max_num_objects", "creation_time", "expiration_time", "deletion_time"}};
+    if (std::find(allowed_keys.begin(), allowed_keys.end(), key) != allowed_keys.end()) {
+        std::string policy_attribute_dynamic_query = "SELECT " + key + " FROM management_policy_attributes WHERE lot_name = ?;";
+        std::map<std::string, std::vector<int>> management_policy_attrs_dynamic_query_str_map{{lot_name, {1}}};
+        value = lotman::Validator::SQL_get_matches(policy_attribute_dynamic_query, management_policy_attrs_dynamic_query_str_map);
+        std::string restricting_parent_name = lot_name;
+        if (recursive) {
+            std::vector<std::string> parents_vec = get_parent_names(lot_name, true);
+            for (const auto &parent : parents_vec) {
+                std::map<std::string, std::vector<int>> management_policy_attrs_dynamic_query_parent_str_map{{parent, {1}}};
+                std::vector<std::string> compare_value = lotman::Validator::SQL_get_matches(policy_attribute_dynamic_query, management_policy_attrs_dynamic_query_parent_str_map);
+                if (std::stod(compare_value[0]) < std::stod(value[0])) {
+                    value[0] = compare_value[0];
+                    restricting_parent_name = parent;
+                }
+            }
+            
+        }
+        internal_obj["lot_name"] = picojson::value(restricting_parent_name);
+        internal_obj["value"] = picojson::value(value[0]);
+    }
+    else {
+        std::cout << "The key: " << key << " is not a recognized key." << std::endl;
+    }
+    return internal_obj;
+}
+
+
 /**
  * Functions specific to Validator class
 */

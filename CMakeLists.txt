@@ -13,6 +13,8 @@ option(LOTMAN_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 
 set(CMAKE_BUILD_TYPE Debug) # -g -O2
+set(CMAKE_C_FLAGS_DEBUG "-g -DDEBUG") # DELETE
+set(CMAKE_CXX_GLAGS_DEBUG "-g -DDEBUG") # DELETE
 
 include(GNUInstallDirs)
 

@@ -209,7 +209,7 @@ int lotman_remove_lot(const char *lot_name,
     // TODO: Check for context and figure out what to do with it
 
     if (!lot_name) {
-        if (err_msg) {*err_msg = strdup("Name for lot to be removed must not be nullpointer.");}
+        if (err_msg) {*err_msg = strdup("Name for the lot to be removed must not be nullpointer.");}
         return -1;
     }
 
@@ -411,36 +411,256 @@ int lotman_lot_exists(const char *lot_name,
                       const char *lotman_context, 
                       char **err_msg) {
     if (!lot_name) {
-        if (err_msg) {*err_msg = strdup("Name for lot to be removed must not be nullpointer.");}
+        if (err_msg) {*err_msg = strdup("Name for the lot whose existence is to be determined must not be nullpointer.");}
         return -1;
     }
     return lotman::Lot::lot_exists(lot_name);
 }
 
 int lotman_get_owners(const char *lot_name, 
-                      bool recursive, 
+                      const bool recursive,
+                      char ***output,
                       char **err_msg) {
-    return false;
+    if (!lot_name) {
+        if (err_msg) {*err_msg = strdup("Name for the lot whose owners are to be obtained must not be nullpointer.");}
+        return -1;
+    }
+
+    std::vector<std::string> owners_list;
+    try {
+        owners_list = lotman::Lot::get_owners(lot_name, recursive);
+    } 
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+
+    auto owners_list_c = static_cast<char **>(malloc(sizeof(char *) * (owners_list.size() +1))); 
+    owners_list_c[owners_list.size()] = nullptr;
+    int idx = 0;
+    for (const auto &iter : owners_list) {
+        owners_list_c[idx] = strdup(iter.c_str());
+        if (!owners_list_c[idx]) {
+            lotman_free_string_list(owners_list_c);
+            if (err_msg) {
+                *err_msg = strdup("Failed to create a copy of string entry in list");
+            }
+            return -1;
+        }
+        idx++;
+    }
+    *output = owners_list_c;
+    return 0;
+}
+
+void lotman_free_string_list(char **str_list) {
+    int idx = 0;
+    do {
+        free(str_list[idx++]);
+    } while (str_list[idx]);
+    free(str_list);
 }
 
 int lotman_get_parent_names(const char *lot_name, 
-                            bool recursive, 
+                            const bool recursive,
+                            const bool get_self,
+                            char ***output,
                             char **err_msg){
-    return false;
+    if (!lot_name) {
+        if (err_msg) {*err_msg = strdup("Name for the lot whose parents are to be obtained must not be nullpointer.");}
+        return -1;
+    }
+
+    std::vector<std::string> parents_list;
+    try {
+        parents_list = lotman::Lot::get_parent_names(lot_name, recursive, get_self);
+    } 
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+
+    auto parents_list_c = static_cast<char **>(malloc(sizeof(char *) * (parents_list.size() +1))); 
+    parents_list_c[parents_list.size()] = nullptr;
+    int idx = 0;
+    for (const auto &iter : parents_list) {
+        parents_list_c[idx] = strdup(iter.c_str());
+        if (!parents_list_c[idx]) {
+            lotman_free_string_list(parents_list_c);
+            if (err_msg) {
+                *err_msg = strdup("Failed to create a copy of string entry in list");
+            }
+            return -1;
+        }
+        idx++;
+    }
+    *output = parents_list_c;
+    return 0;
 }
 
 int lotman_get_children_names(const char *lot_name, 
-                              bool recursive, 
+                              const bool recursive,
+                              const bool get_self,
+                              char ***output,
                               char **err_msg) {
-    return false;
+    if (!lot_name) {
+        if (err_msg) {*err_msg = strdup("Name for the lot whose children are to be obtained must not be nullpointer.");}
+        return -1;
+    }
+
+    std::vector<std::string> children_list;
+    try {
+        children_list = lotman::Lot::get_children_names(lot_name, recursive, get_self);
+    } 
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+
+    auto children_list_c = static_cast<char **>(malloc(sizeof(char *) * (children_list.size() +1))); 
+    children_list_c[children_list.size()] = nullptr;
+    int idx = 0;
+    for (const auto &iter : children_list) {
+        children_list_c[idx] = strdup(iter.c_str());
+        if (!children_list_c[idx]) {
+            lotman_free_string_list(children_list_c);
+            if (err_msg) {
+                *err_msg = strdup("Failed to create a copy of string entry in list");
+            }
+            return -1;
+        }
+        idx++;
+    }
+    *output = children_list_c;
+    return 0;
 }
 
 int lotman_get_policy_attributes(const char *lot_name, 
-                                 const char *policy_attributes_JSON, 
-                                 bool recursive, 
+                                 const char *policy_attributes_JSON_str,  
+                                 char **output,
                                  char **err_msg) {
-    return false;
+    if (!lot_name) {
+        if (err_msg) {*err_msg = strdup("Name for the lot whose policies are to be obtained must not be nullpointer.");}
+        return -1;
+    }
+
+    if (!policy_attributes_JSON_str) {
+        if (err_msg) {*err_msg = strdup("The policy attributes string must not be nullpointer.");}
+        return -1;
+    }
+
+
+    picojson::value policy_attributes_JSON;
+    std::string err = picojson::parse(policy_attributes_JSON, policy_attributes_JSON_str);
+    if (!err.empty()) {
+        std::cerr << "Policy attributes JSON can't be parsed -- it's probably malformed!";
+        std::cerr << err << std::endl;
+    }
+
+    if (!policy_attributes_JSON.is<picojson::object>()) {
+        std::cerr << "Policy attributes JSON is not recognized as an object -- it's probably malformed!" << std::endl;
+        return -1;
+    }
+
+    auto policy_attributes_input_obj = policy_attributes_JSON.get<picojson::object>();
+    auto iter = policy_attributes_input_obj.begin();
+    if (iter == policy_attributes_input_obj.end()) {
+        std::cerr << "Something is wrong -- the policy attributes JSON object appears empty." << std::endl;
+        return -1;
+    }
+
+    picojson::object policy_attributes_output_obj;
+    try {
+        for (iter; iter!=policy_attributes_input_obj.end(); ++iter) {
+            std::string key = iter->first;
+            int recursive = static_cast<int>(iter->second.get<double>());
+            policy_attributes_output_obj[key] = picojson::value(lotman::Lot::get_restricting_attribute(lot_name, key, recursive));
+        }
+        std::string policy_attributes_output_str = picojson::value(policy_attributes_output_obj).serialize();
+        auto policy_attributes_output_str_c = static_cast<char *>(malloc(sizeof(char) * (policy_attributes_output_str.length() + 1)));
+        policy_attributes_output_str_c = strdup(policy_attributes_output_str.c_str());
+        *output = policy_attributes_output_str_c;
+        return 0;
+    } 
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
 }
+
+// int lotman_get_lot_obj(const char *lot_JSON_str, char **output, char **err_msg) {
+//     if (!lot_JSON_str) {
+//         if (err_msg) {*err_msg = strdup("The lot JSON string must not be nullpointer.");}
+//         return -1;
+//     }
+
+
+//     picojson::value lot_JSON;
+//     std::string err = picojson::parse(lot_JSON, lot_JSON_str);
+//     if (!err.empty()) {
+//         std::cerr << "Lot JSON can't be parsed -- it's probably malformed!";
+//         std::cerr << err << std::endl;
+//     }
+
+//     if (!lot_JSON.is<picojson::object>()) {
+//         std::cerr << "Lot JSON is not recognized as an object -- it's probably malformed!" << std::endl;
+//         return -1;
+//     }
+
+//     auto lot_input_obj = lot_JSON.get<picojson::object>();
+//     auto iter = lot_input_obj.begin();
+//     if (iter == lot_input_obj.end()) {
+//         std::cerr << "Something is wrong -- the lot JSON object appears empty." << std::endl;
+//         return -1;
+//     }
+
+//     picojson::object lot_output_obj;
+//     try {
+//         for (iter; iter!=lot_input_obj.end(); ++iter) {
+//             std::string key = iter->first;
+//             int recursive = static_cast<int>(iter->second.get<double>());
+//             policy_attributes_output_obj[key] = picojson::value(lotman::Lot::get_restricting_attribute(lot_name, key, recursive));
+//         }
+//         std::string policy_attributes_output_str = picojson::value(policy_attributes_output_obj).serialize();
+//         auto policy_attributes_output_str_c = static_cast<char *>(malloc(sizeof(char) * (policy_attributes_output_str.length() + 1)));
+//         policy_attributes_output_str_c = strdup(policy_attributes_output_str.c_str());
+//         *output = policy_attributes_output_str_c;
+//         return 0;
+//     } 
+//     catch (std::exception &exc) {
+//         if (err_msg) {
+//             *err_msg = strdup(exc.what());
+//         }
+//         return -1;
+//     }
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 int lotman_get_lot_dirs(const char *lot_name, 
                         bool recursive, 

@@ -37,13 +37,15 @@ int lotman_remove_lot(const char *lot_name, bool assign_LTBR_parent_as_parent_to
 int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
 int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg);
 int lotman_is_root(const char *lot_name, char **err_msg);
-int lotman_get_owners(const char *lot_name, bool recursive, char **err_msg);
-int lotman_get_parent_names(const char *lot_name, bool recursive, char **err_msg);
-int lotman_get_children_names(const char *lot_name, bool recursive, char **err_msg);
-int lotman_get_policy_attributes(const char *lot_name, const char *policy_attributes_JSON, bool recursive, char **err_msg);
+int lotman_get_owners(const char *lot_name, const bool recursive, char ***output, char **err_msg);
+int lotman_get_parent_names(const char *lot_name, const bool recursive, const bool get_self, char ***output, char **err_msg);
+int lotman_get_children_names(const char *lot_name, const bool recursive, const bool get_self, char ***output, char **err_msg);
+int lotman_get_policy_attributes(const char *lot_name, const char *policy_attributes_JSON, char **output, char **err_msg);
 int lotman_get_lot_dirs(const char *lot_name, bool recursive, char **err_msg);
 int lotman_get_matching_lots(const char *criteria_JSON, bool recursive, char **err_msg);
 int lotman_check_db_health(char **err_msg);
+void lotman_free_string_list(char **str_list);
+int lotman_get_lot_obj(const char *lot_JSON_str, char **output, char **err_msg);
 
 
 #ifdef __cplusplus
