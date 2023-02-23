@@ -68,6 +68,9 @@ class Lot {
                                                           const std::string key,
                                                           const bool recursive);
         
+        static picojson::object get_lot_dirs(const std::string lot_name,
+                                             const bool recursive);
+        
 
     private:
         static bool store_lot(std::string lot_name, 

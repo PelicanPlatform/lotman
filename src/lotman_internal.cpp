@@ -11,7 +11,7 @@
 using namespace lotman;
 
 // TODO: Go through and make things const where they shoudl be declared as such
-
+// TODO: Go through and handle any cases where lot_exists should be checked!
 /**
  * Functions specific to Lot class
 */
@@ -290,15 +290,20 @@ bool lotman::Lot::add_to_lot(std::string lot_name,
                              std::vector<std::string> owners,
                              std::vector<std::string> parents,
                             std::map<std::string, int> paths_map) {
-        if (!store_new_rows(lot_name, owners, parents, paths_map)) {
-            return false;
-        }
+    if (!lot_exists(lot_name)) {
+        std::cout << "Lot does not exist so it cannot be updated" << std::endl;
+        return false;
+    }
+    if (!store_new_rows(lot_name, owners, parents, paths_map)) {
+        return false;
+    }
     return true;
 }
 
 std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name,
                                                        bool recursive,
                                                        bool get_self) {
+    
     
     std::vector<std::string> lot_parents_vec;
     std::string parents_query;
@@ -429,6 +434,55 @@ picojson::object lotman::Lot::get_restricting_attribute(const std::string lot_na
     return internal_obj;
 }
 
+picojson::object lotman::Lot::get_lot_dirs(const std::string lot_name,
+                                           const bool recursive) {
+    /**
+     * TODO: Currently the SQL_get_matches function can only grab one column at a time, so any time multiple columns
+     * are needed (such as in this case, where both the path and the recursion are sought), multiple calls to the
+     * function must be made. This reduces efficiency because the lot DB file must be opened and operated on for each 
+     * call to SQL_get_matches. To increase efficiency, SQL_get_matches should be reworked to be made aware of how many
+     * columns it should expect to get so that it can return each of those columns in a sensible format on the first call.
+     */
+    
+    if (!lot_exists(lot_name))
+
+    picojson::object path_obj;
+    std::string lot_dirs_dynamic_path_query = "SELECT path FROM paths WHERE lot_name = ?;"; 
+    std::string lot_dirs_dynamic_recursive_query = "SELECT recursive FROM paths WHERE path = ? AND lot_name = ?;";
+    std::map<std::string, std::vector<int>> lot_dirs_dynamic_path_query_str_map{{lot_name, {1}}};
+    std::vector<std::string> path_output_vec = lotman::Validator::SQL_get_matches(lot_dirs_dynamic_path_query, lot_dirs_dynamic_path_query_str_map);
+
+    
+    for (const auto &path : path_output_vec) {
+        picojson::object path_obj_internal;
+        std::map<std::string, std::vector<int>> lot_dirs_dynamic_query_str_map{{path, {1}}, {lot_name, {2}}};
+        std::vector<std::string> recursive_output = lotman::Validator::SQL_get_matches(lot_dirs_dynamic_recursive_query, lot_dirs_dynamic_query_str_map);
+        path_obj_internal["lot_name"] = picojson::value(lot_name);
+        path_obj_internal["recursive"] = picojson::value(recursive_output[0]);
+        path_obj[path] = picojson::value(path_obj_internal);
+
+    }
+
+    if (recursive) {
+        std::vector<std::string> children_vec = get_children_names(lot_name, true);
+        for (const auto &child : children_vec) {
+            std::map<std::string, std::vector<int>> child_dirs_dynamic_path_query_str_map{{child, {1}}};
+            std::vector<std::string> child_path_output_vec = lotman::Validator::SQL_get_matches(lot_dirs_dynamic_path_query, child_dirs_dynamic_path_query_str_map);
+
+            for (const auto &path : child_path_output_vec) {
+                picojson::object path_obj_internal;
+                std::map<std::string, std::vector<int>> child_dirs_dynamic_query_str_map{{path, {1}}, {child, {2}}};
+                std::vector<std::string> child_recursive_output = lotman::Validator::SQL_get_matches(lot_dirs_dynamic_recursive_query, child_dirs_dynamic_query_str_map);
+                path_obj_internal["lot_name"] = picojson::value(child);
+                path_obj_internal["recursive"] = picojson::value(child_recursive_output[0]);
+                path_obj[path] = picojson::value(path_obj_internal);
+            }
+        }
+    }
+
+    
+    return path_obj;
+                                           }
 
 /**
  * Functions specific to Validator class

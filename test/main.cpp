@@ -141,10 +141,18 @@ namespace {
         char *output;
         int rv = lotman_get_policy_attributes(lot_name, policy_attrs_JSON_str, &output, &err_msg);
         ASSERT_TRUE(rv == 0);
-        for (int iter = 0; output[iter]; iter++) {
-            std::cout << output[iter];
-        }
-        std::cout << std::endl;
+        std::cout << output << std::endl;
+        free(output);
+    }
+
+    TEST(LotManTest, GetLotDirs) {
+        char *err_msg;
+        const char *lot_name = "lot5";
+        const bool recursive = false;
+        char *output;
+        int rv = lotman_get_lot_dirs(lot_name, recursive, &output, &err_msg);
+        ASSERT_TRUE(rv == 0);
+        std::cout << output << std::endl;
         free(output);
     }
 

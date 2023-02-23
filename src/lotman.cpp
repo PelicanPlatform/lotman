@@ -596,32 +596,80 @@ int lotman_get_policy_attributes(const char *lot_name,
     }
 }
 
+int lotman_get_lot_dirs(const char *lot_name, 
+                        const bool recursive, 
+                        char **output,
+                        char **err_msg) {
+    
+    if (!lot_name) {
+        if (err_msg) {*err_msg = strdup("Name for the lot whose directories are to be obtained must not be nullpointer.");}
+        return -1;
+    }
+
+    picojson::object lot_dirs_output_obj;
+    try {
+        lot_dirs_output_obj = lotman::Lot::get_lot_dirs(lot_name, recursive);
+        
+
+
+        std::string lot_dirs_output_str = picojson::value(lot_dirs_output_obj).serialize();
+
+        auto lot_dirs_output_str_c = static_cast<char *>(malloc(sizeof(char) * (lot_dirs_output_str.length() + 1)));
+        lot_dirs_output_str_c = strdup(lot_dirs_output_str.c_str());
+        *output = lot_dirs_output_str_c;
+        return 0;
+        
+    } 
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+
+
+
+
+
+
+
+
+}
+
+int lotman_get_matching_lots(const char *criteria_JSON, 
+                            bool recursive, 
+                            char **err_msg) {
+    return false;
+}
+
+int lotman_check_db_health(char **err_msg) {
+    return false;
+}
+
+
+
+
 // int lotman_get_lot_obj(const char *lot_JSON_str, char **output, char **err_msg) {
 //     if (!lot_JSON_str) {
 //         if (err_msg) {*err_msg = strdup("The lot JSON string must not be nullpointer.");}
 //         return -1;
 //     }
-
-
 //     picojson::value lot_JSON;
 //     std::string err = picojson::parse(lot_JSON, lot_JSON_str);
 //     if (!err.empty()) {
 //         std::cerr << "Lot JSON can't be parsed -- it's probably malformed!";
 //         std::cerr << err << std::endl;
 //     }
-
 //     if (!lot_JSON.is<picojson::object>()) {
 //         std::cerr << "Lot JSON is not recognized as an object -- it's probably malformed!" << std::endl;
 //         return -1;
 //     }
-
 //     auto lot_input_obj = lot_JSON.get<picojson::object>();
 //     auto iter = lot_input_obj.begin();
 //     if (iter == lot_input_obj.end()) {
 //         std::cerr << "Something is wrong -- the lot JSON object appears empty." << std::endl;
 //         return -1;
 //     }
-
 //     picojson::object lot_output_obj;
 //     try {
 //         for (iter; iter!=lot_input_obj.end(); ++iter) {
@@ -642,39 +690,3 @@ int lotman_get_policy_attributes(const char *lot_name,
 //         return -1;
 //     }
 // }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-int lotman_get_lot_dirs(const char *lot_name, 
-                        bool recursive, 
-                        char **err_msg) {
-    return false;
-}
-
-int lotman_get_matching_lots(const char *criteria_JSON, 
-                            bool recursive, 
-                            char **err_msg) {
-    return false;
-}
-
-int lotman_check_db_health(char **err_msg) {
-    return false;
-}
-
