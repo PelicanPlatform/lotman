@@ -70,7 +70,10 @@ class Lot {
         
         static picojson::object get_lot_dirs(const std::string lot_name,
                                              const bool recursive);
-        
+
+        static std::vector<std::string> get_lots_from_owners(picojson::array owners_arr);
+
+        static std::vector<std::string> get_lots_from_parents(std::map<std::string, bool> parents_recursion_map);
 
     private:
         static bool store_lot(std::string lot_name, 

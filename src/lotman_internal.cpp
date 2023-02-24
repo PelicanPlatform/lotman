@@ -289,7 +289,7 @@ bool lotman::Lot::update_lot(std::string lot_name,
 bool lotman::Lot::add_to_lot(std::string lot_name,
                              std::vector<std::string> owners,
                              std::vector<std::string> parents,
-                            std::map<std::string, int> paths_map) {
+                             std::map<std::string, int> paths_map) {
     if (!lot_exists(lot_name)) {
         std::cout << "Lot does not exist so it cannot be updated" << std::endl;
         return false;
@@ -444,7 +444,6 @@ picojson::object lotman::Lot::get_lot_dirs(const std::string lot_name,
      * columns it should expect to get so that it can return each of those columns in a sensible format on the first call.
      */
     
-    if (!lot_exists(lot_name))
 
     picojson::object path_obj;
     std::string lot_dirs_dynamic_path_query = "SELECT path FROM paths WHERE lot_name = ?;"; 
@@ -483,6 +482,53 @@ picojson::object lotman::Lot::get_lot_dirs(const std::string lot_name,
     
     return path_obj;
                                            }
+
+std::vector<std::string> lotman::Lot::get_lots_from_owners(picojson::array owners_arr) {
+    
+    std::vector<std::string> matching_lots_vec{};
+    std::string lots_from_owners_dynamic_query = "SELECT lot_name FROM owners WHERE owner = ?;";
+    for (const auto &owner_obj : owners_arr) {
+        if (!owner_obj.is<picojson::object>()) {
+            std::cerr << "object in owners array is not recognized as an object." << std::endl;
+            return matching_lots_vec;
+        }
+        picojson::object owner_obj_internal = owner_obj.get<picojson::object>();
+        auto iter = owner_obj_internal.begin();
+        if (iter == owner_obj_internal.end()) {
+            std::cerr << "object in owners array appears empty";
+            return matching_lots_vec;
+        }
+
+        for(iter; iter != owner_obj_internal.end(); ++iter) {
+            auto owner = iter->first;
+            auto recursive_val = iter->second;
+            if (!recursive_val.is<bool>()) {
+                std::cerr << "recursive value for owner object is not recognized as a bool." << std::endl;
+                return matching_lots_vec;
+            }
+            bool recursive = recursive_val.get<bool>();
+
+            std::map<std::string, std::vector<int>> lots_from_owners_dynamic_query_str_map{{owner, {1}}};
+            matching_lots_vec = lotman::Validator::SQL_get_matches(lots_from_owners_dynamic_query,lots_from_owners_dynamic_query_str_map);
+
+            if (recursive) {
+                std::vector<std::string> tmp_vec;
+                for (const auto &lot : matching_lots_vec) {
+                    std::vector<std::string> children_lots_vec = get_children_names(lot, true);
+                    tmp_vec.insert(tmp_vec.end(), children_lots_vec.begin(), children_lots_vec.end());
+                }
+                matching_lots_vec.insert(matching_lots_vec.end(), tmp_vec.begin(), tmp_vec.end());
+            }
+        }
+    }
+    std::sort(matching_lots_vec.begin(), matching_lots_vec.end());
+    auto last = std::unique(matching_lots_vec.begin(), matching_lots_vec.end());
+    matching_lots_vec.erase(last, matching_lots_vec.end());
+
+    return matching_lots_vec;
+}
+
+
 
 /**
  * Functions specific to Validator class

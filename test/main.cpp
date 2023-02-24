@@ -8,8 +8,8 @@ namespace {
     TEST(LotManTest, DefaultLotTests) {
         char *err_msg;
         const char *context;
-        const char *lot1 = "{\"lot_name\": \"lot1\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"lot1\"],\"paths\": [{\"/a/path\":0},{\"/foo/bar\":1}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
-        const char *default_lot = "{\"lot_name\": \"default\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"default\"],\"paths\": [{\"/default/paths\":1}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *lot1 = "{\"lot_name\": \"lot1\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"lot1\"],\"paths\": [{\"/a/path\":false},{\"/foo/bar\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *default_lot = "{\"lot_name\": \"default\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"default\"],\"paths\": [{\"/default/paths\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
 
         auto rv = lotman_add_lot(lot1, context, &err_msg);
         ASSERT_FALSE(rv==0);
@@ -25,7 +25,7 @@ namespace {
         char *err_msg;
         const char *context;
 
-        const char *lot1 = "{\"lot_name\": \"lot1\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"lot1\"],\"paths\": [{\"/a/path\":0},{\"/foo/bar\":1}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *lot1 = "{\"lot_name\": \"lot1\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"lot1\"],\"paths\": [{\"/a/path\":false},{\"/foo/bar\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
 
         auto rv = lotman_add_lot(lot1, context, &err_msg);
         ASSERT_TRUE(rv == 0);
@@ -44,10 +44,10 @@ namespace {
         char *err_msg;
         const char *context;
 
-        const char *lot1 = "{\"lot_name\": \"lot1\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"lot1\"],\"paths\": [{\"/a/path\":0},{\"/foo/bar\":1}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":20,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
-        const char *lot2 = "{\"lot_name\": \"lot2\",  \"owners\": [\"Justin\", \"Brian\"],  \"parents\": [\"lot1\"],  \"paths\": [{\"/b/path\":0},{\"/foo/baz\":1}],  \"management_policy_attrs\": { \"dedicated_GB\":6,\"opportunistic_GB\":1.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":233,\"deletion_time\":355}}";
-        const char *lot3 = "{ \"lot_name\": \"lot3\", \"owners\": [\"Justin\", \"Brian\"],  \"parents\": [\"lot3\"],  \"paths\": [{\"/another/path\":0},{\"/123\":1}], \"management_policy_attrs\": { \"dedicated_GB\":3,\"opportunistic_GB\":2.0,\"max_num_objects\":60,\"creation_time\":123,\"expiration_time\":232,\"deletion_time\":325}}";
-        const char *lot4 = "{ \"lot_name\": \"lot4\", \"owners\": [\"Justin\", \"Brian\"], \"parents\": [\"lot2\",\"lot3\"], \"paths\": [{\"/234\":0},{\"/345\":1}], \"management_policy_attrs\": { \"dedicated_GB\":3,\"opportunistic_GB\":2.1,\"max_num_objects\":40,\"creation_time\":123,\"expiration_time\":231,\"deletion_time\":315}}";
+        const char *lot1 = "{\"lot_name\": \"lot1\", \"owners\": [\"Justin\", \"Brian\", \"Cannon\"],  \"parents\": [\"lot1\"],\"paths\": [{\"/a/path\":false},{\"/foo/bar\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":20,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *lot2 = "{\"lot_name\": \"lot2\",  \"owners\": [\"Justin\", \"Brian\"],  \"parents\": [\"lot1\"],  \"paths\": [{\"/b/path\":false},{\"/foo/baz\":true}],  \"management_policy_attrs\": { \"dedicated_GB\":6,\"opportunistic_GB\":1.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":233,\"deletion_time\":355}}";
+        const char *lot3 = "{ \"lot_name\": \"lot3\", \"owners\": [\"Justin\", \"Brian\"],  \"parents\": [\"lot3\"],  \"paths\": [{\"/another/path\":false},{\"/123\":true}], \"management_policy_attrs\": { \"dedicated_GB\":3,\"opportunistic_GB\":2.0,\"max_num_objects\":60,\"creation_time\":123,\"expiration_time\":232,\"deletion_time\":325}}";
+        const char *lot4 = "{ \"lot_name\": \"lot4\", \"owners\": [\"Justin\", \"Brian\"], \"parents\": [\"lot2\",\"lot3\"], \"paths\": [{\"/234\":false},{\"/345\":true}], \"management_policy_attrs\": { \"dedicated_GB\":3,\"opportunistic_GB\":2.1,\"max_num_objects\":40,\"creation_time\":123,\"expiration_time\":231,\"deletion_time\":315}}";
 
         auto rv = lotman_add_lot(lot1, context, &err_msg);
         ASSERT_TRUE(rv == 0);
@@ -63,12 +63,12 @@ namespace {
 
         // Try to add a lot with cyclic dependency
         // Cycle created by trying to add lot5 with lot1 as a child
-        const char *cyclic_lot = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot4\"],\"children\": [\"lot1\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *cyclic_lot = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot4\"],\"children\": [\"lot1\"],\"paths\": [{\"/456\":false},{\"/567\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
         rv = lotman_add_lot(cyclic_lot, context, &err_msg);
         ASSERT_FALSE(rv == 0);
 
         // Try to add lot with no parent
-        const char *no_parents_lot = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [],\"children\": [\"lot1\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_GB\":111111,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        const char *no_parents_lot = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [],\"children\": [\"lot1\"],\"paths\": [{\"/456\":false},{\"/567\":true}],\"management_policy_attrs\": { \"dedicated_GB\":111111,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
         rv = lotman_add_lot(no_parents_lot, context, &err_msg);
         ASSERT_FALSE(rv == 0);
     }
@@ -79,7 +79,7 @@ namespace {
         char *err_msg;
         const char *context;
 
-        const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot3\"],\"children\": [\"lot4\"],\"paths\": [{\"/456\":0},{\"/567\":1}],\"management_policy_attrs\": { \"dedicated_GB\":10,\"opportunistic_GB\":3.5,\"max_num_objects\":20,\"creation_time\":100,\"expiration_time\":200,\"deletion_time\":300}, \"test_bad_key\":10}";
+        const char *lot5 = "{\"lot_name\": \"lot5\",\"owners\": [\"Justin\", \"Brian\"],\"parents\": [\"lot3\"],\"children\": [\"lot4\"],\"paths\": [{\"/456\":false},{\"/567\":true}],\"management_policy_attrs\": { \"dedicated_GB\":10,\"opportunistic_GB\":3.5,\"max_num_objects\":20,\"creation_time\":100,\"expiration_time\":200,\"deletion_time\":300}, \"test_bad_key\":10}";
         int rv = lotman_add_lot(lot5, context, &err_msg);
         ASSERT_TRUE(rv == 0);
     }
@@ -88,7 +88,7 @@ namespace {
         char *err_msg;
         const char *context;
 
-        const char *modified_lot = "{ \"lot_name\": \"lot3\", \"owners\": [{\"Justin\":\"Not Justin\"}, {\"Brian\":\"Not Brian\"}],  \"parents\": [{\"lot3\":\"lot2\"}],  \"paths\": [{\"/another/path\":1},{\"/123\":0}], \"management_policy_attrs\": { \"dedicated_GB\":10.111,\"opportunistic_GB\":6.6,\"max_num_objects\":50,\"creation_time\":111,\"expiration_time\":222.111,\"deletion_time\":333}}";
+        const char *modified_lot = "{ \"lot_name\": \"lot3\", \"owners\": [{\"Justin\":\"Not Justin\"}, {\"Brian\":\"Not Brian\"}],  \"parents\": [{\"lot3\":\"lot2\"}],  \"paths\": [{\"/another/path\":true},{\"/123\":false}], \"management_policy_attrs\": { \"dedicated_GB\":10.111,\"opportunistic_GB\":6.6,\"max_num_objects\":50,\"creation_time\":111,\"expiration_time\":222.111,\"deletion_time\":333}}";
         int rv = lotman_update_lot(modified_lot, context, &err_msg);
         ASSERT_TRUE(rv == 0);
     }
@@ -137,7 +137,7 @@ namespace {
     TEST(LotManTest, GetPolicyAttrs) {
         char *err_msg;
         const char *lot_name = "lot4";
-        const char *policy_attrs_JSON_str = "{\"dedicated_GB\":1, \"opportunistic_GB\":1, \"max_num_objects\":1, \"creation_time\":1, \"expiration_time\":1, \"deletion_time\":1}";
+        const char *policy_attrs_JSON_str = "{\"dedicated_GB\":true, \"opportunistic_GB\":true, \"max_num_objects\":true, \"creation_time\":true, \"expiration_time\":true, \"deletion_time\":true}";
         char *output;
         int rv = lotman_get_policy_attributes(lot_name, policy_attrs_JSON_str, &output, &err_msg);
         ASSERT_TRUE(rv == 0);
@@ -154,6 +154,19 @@ namespace {
         ASSERT_TRUE(rv == 0);
         std::cout << output << std::endl;
         free(output);
+    }
+
+    TEST(LotManTest, GetMatchingLots) {
+        char *err_msg;
+        const char *criteria_JSON = "{\"owners\":[{\"Justin\":true},{\"Not Justin\":true}]}";
+    
+        char **output;
+        int rv = lotman_get_matching_lots(criteria_JSON, &output, &err_msg);
+        ASSERT_TRUE(rv == 0);
+        for (int iter = 0; output[iter]; iter++) {
+            std::cout << output[iter] << std::endl;
+        }
+        lotman_free_string_list(output);
     }
 
     TEST(LotManTest, GetVersionTest) {

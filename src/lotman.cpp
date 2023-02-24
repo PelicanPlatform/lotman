@@ -172,11 +172,11 @@ int lotman_add_lot(const char *lotman_JSON_str,
                     return -1;
                 }
                 for (path_update_obj_iter; path_update_obj_iter != path_update_obj.end(); ++path_update_obj_iter) {
-                    if (!path_update_obj_iter->second.is<double>()) {
-                        std::cerr << "A recursion flag for the path: " << path_update_obj_iter->first << "is not recognized as a number" << std::endl;
+                    if (!path_update_obj_iter->second.is<bool>()) {
+                        std::cerr << "A recursion flag for the path: " << path_update_obj_iter->first << "is not recognized " << std::endl;
                         return -1;
                     }
-                    paths_map[path_update_obj_iter->first] = path_update_obj_iter->second.get<double>();
+                    paths_map[path_update_obj_iter->first] = path_update_obj_iter->second.get<bool>();
                 }
             } 
         }
@@ -380,7 +380,7 @@ int lotman_update_lot(const char *lotman_JSON_str,
                     return -1;
                 }
                 for (path_update_obj_iter; path_update_obj_iter != path_update_obj.end(); ++path_update_obj_iter) {
-                    paths_map[path_update_obj_iter->first] = path_update_obj_iter->second.get<double>();
+                    paths_map[path_update_obj_iter->first] = path_update_obj_iter->second.get<bool>();
                 }
             } 
         }
@@ -579,7 +579,7 @@ int lotman_get_policy_attributes(const char *lot_name,
     try {
         for (iter; iter!=policy_attributes_input_obj.end(); ++iter) {
             std::string key = iter->first;
-            int recursive = static_cast<int>(iter->second.get<double>());
+            int recursive = iter->second.get<bool>();
             policy_attributes_output_obj[key] = picojson::value(lotman::Lot::get_restricting_attribute(lot_name, key, recursive));
         }
         std::string policy_attributes_output_str = picojson::value(policy_attributes_output_obj).serialize();
@@ -636,10 +636,173 @@ int lotman_get_lot_dirs(const char *lot_name,
 
 }
 
-int lotman_get_matching_lots(const char *criteria_JSON, 
-                            bool recursive, 
+int lotman_get_matching_lots(const char *criteria_JSON_str, 
+                            char ***output, 
                             char **err_msg) {
-    return false;
+    // std::array<std::string, 13> keys{"owners", "parents", "children", 
+    //                                  "paths", "dedicated_GB", "opportunistic_GB", 
+    //                                  "max_num_objects", "creation_time", "expiration_time", 
+    //                                  "deletion_time", "dedicated_usage_GB", "opportunistic_usage_GB", "num_objects"};
+    if (!criteria_JSON_str) {
+        if (err_msg) {*err_msg = strdup("The criteria string must not be nullpointer.");}
+        return -1;
+    }
+
+    picojson::value criteria_JSON;
+    std::string err = picojson::parse(criteria_JSON, criteria_JSON_str);
+    if (!err.empty()) {
+        std::cerr << "Criteria JSON can't be parsed -- it's probably malformed!";
+        std::cerr << err << std::endl;
+    }
+
+    if (!criteria_JSON.is<picojson::object>()) {
+        std::cerr << "Criteria JSON is not recognized as an object -- it's probably malformed!" << std::endl;
+        return -1;
+    }
+
+    auto criteria_input_obj = criteria_JSON.get<picojson::object>();
+    auto iter = criteria_input_obj.begin();
+    if (iter == criteria_input_obj.end()) {
+        std::cerr << "Something is wrong -- the criteria JSON object appears empty." << std::endl;
+        return -1;
+    }
+
+    std::vector<std::string> output_vec{};
+    try {
+
+        std::vector<std::vector<std::string>> intersect_vecs;
+        for (iter; iter != criteria_input_obj.end(); ++iter) {
+            // check if key is one of known keys
+            auto key = iter->first;
+            auto value = iter->second;
+
+            if (key == "owners") {
+                if (!value.is<picojson::array>()) {
+                    std::cerr << "Owners key expects an array, but doesn't recognize one -- it's probably malformed!" << std::endl;
+                    return -1;
+                }
+                picojson::array owners_arr = value.get<picojson::array>();
+
+                // get the sorted vector
+                std::vector<std::string> lots_from_owners_vec{lotman::Lot::get_lots_from_owners(owners_arr)};
+                intersect_vecs.push_back(lots_from_owners_vec);  
+            }
+
+            else if (key == "parents") {
+
+                
+            }
+
+            else if (key == "children") {
+
+                
+            }
+
+            else if (key == "paths") {
+
+                
+            }
+
+            else if (key == "dedicated_GB") {
+
+                
+            }
+
+            else if (key == "oppportunistic_GB") {
+
+                
+            }
+
+            else if (key == "max_num_objects") {
+
+                
+            }
+
+            else if (key == "creation_time") {
+
+                
+            }
+
+            else if (key == "expiration_time") {
+
+                
+            }
+
+            else if (key == "deletion_time") {
+
+                
+            }
+
+            else if (key == "dedicated_usage_GB") {
+
+                
+            }
+
+            else if (key == "opportunistic_usage_GB") {
+
+                
+            }
+
+            else if (key == "owners") {
+
+                
+            }
+
+            else {
+
+                std::cerr << "Unrecognized key: " << key << std::endl;
+                return -1;
+            }
+        } 
+
+        if (intersect_vecs.size() == 0) {
+            // No criteria were supplied! Strange...
+        }
+
+        // Only one criterion was supplied
+        else if (intersect_vecs.size() == 1) {
+            output_vec = intersect_vecs[0];
+        }
+
+        // Multiple criteria supplied and multiple
+        else {
+            std::set_intersection(intersect_vecs[0].begin(), intersect_vecs[0].end(),
+                                  intersect_vecs[1].begin(), intersect_vecs[1].end(),
+                                  std::back_inserter(output_vec));
+            for (int iter = 2; iter < intersect_vecs.size(); ++iter) {
+                std::vector<std::string> tmp_vec;
+                set_intersection(output_vec.begin(), output_vec.end(),
+                                 intersect_vecs[iter].begin(), intersect_vecs[iter].end(),
+                                 std::back_inserter(tmp_vec));
+                output_vec = tmp_vec;
+            }
+        }
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        std::cerr << *err_msg << std::endl;
+        return -1;
+    }
+    
+    
+    auto lots_list_c = static_cast<char **>(malloc(sizeof(char *) * (output_vec.size() +1))); 
+    lots_list_c[output_vec.size()] = nullptr;
+    int idx = 0;
+    for (const auto &iter : output_vec) {
+        lots_list_c[idx] = strdup(iter.c_str());
+        if (!lots_list_c[idx]) {
+            lotman_free_string_list(lots_list_c);
+            if (err_msg) {
+                *err_msg = strdup("Failed to create a copy of string entry in list");
+            }
+            return -1;
+        }
+        idx++;
+    }
+    *output = lots_list_c;
+    return 0;
 }
 
 int lotman_check_db_health(char **err_msg) {
