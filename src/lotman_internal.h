@@ -39,7 +39,7 @@ class Lot {
                                bool assign_LTBR_parent_as_parent_to_non_orphans, 
                                bool assign_policy_to_children);
 
-        static bool update_lot(std::string lot_name, 
+        static bool update_lot_params(std::string lot_name, 
                                std::map<std::string, std::string> owners_map = std::map<std::string, std::string>(), 
                                std::map<std::string, std::string> parents_map = std::map<std::string, std::string>(), 
                                std::map<std::string, int> paths_map = std::map<std::string, int>(), 
@@ -50,6 +50,8 @@ class Lot {
                                std::vector<std::string> owners = std::vector<std::string>(),
                                std::vector<std::string> parents = std::vector<std::string>(),
                                std::map<std::string, int> paths_map = std::map<std::string, int>());
+
+        static bool update_lot_usage(std::string lot_name, std::string key, double value);
 
         static std::vector<std::string> get_owners(std::string lot_name,
                                                    bool recursive=false);                               
@@ -73,7 +75,17 @@ class Lot {
 
         static std::vector<std::string> get_lots_from_owners(picojson::array owners_arr);
 
-        static std::vector<std::string> get_lots_from_parents(std::map<std::string, bool> parents_recursion_map);
+        static std::vector<std::string> get_lots_from_parents(picojson::array parents_arr);
+
+        static std::vector<std::string> get_lots_from_children(picojson::array children_arr);
+
+        static std::vector<std::string> get_lots_from_paths(picojson::array paths_arr);
+
+        static std::vector<std::string> get_lots_from_int_policy_attr(std::string key, std::string comparator, int comp_value);
+
+        static std::vector<std::string> get_lots_from_double_policy_attr(std::string key, std::string comparator, double comp_value);
+
+
 
     private:
         static bool store_lot(std::string lot_name, 

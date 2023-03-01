@@ -390,7 +390,7 @@ int lotman_update_lot(const char *lotman_JSON_str,
     }
 
     try {
-        if (!lotman::Lot::update_lot(lot_name, owners_map, parents_map, paths_map, management_policy_attrs_int_map, management_policy_attrs_double_map)) {
+        if (!lotman::Lot::update_lot_params(lot_name, owners_map, parents_map, paths_map, management_policy_attrs_int_map, management_policy_attrs_double_map)) {
             if (err_msg) {*err_msg = strdup("Failed to modify lot");}
             std::cout << "error: " << *err_msg << std::endl;
             return -1;
@@ -609,16 +609,6 @@ int lotman_get_lot_dirs(const char *lot_name,
     picojson::object lot_dirs_output_obj;
     try {
         lot_dirs_output_obj = lotman::Lot::get_lot_dirs(lot_name, recursive);
-        
-
-
-        std::string lot_dirs_output_str = picojson::value(lot_dirs_output_obj).serialize();
-
-        auto lot_dirs_output_str_c = static_cast<char *>(malloc(sizeof(char) * (lot_dirs_output_str.length() + 1)));
-        lot_dirs_output_str_c = strdup(lot_dirs_output_str.c_str());
-        *output = lot_dirs_output_str_c;
-        return 0;
-        
     } 
     catch (std::exception &exc) {
         if (err_msg) {
@@ -628,21 +618,18 @@ int lotman_get_lot_dirs(const char *lot_name,
     }
 
 
+    std::string lot_dirs_output_str = picojson::value(lot_dirs_output_obj).serialize();
 
-
-
-
-
-
+    auto lot_dirs_output_str_c = static_cast<char *>(malloc(sizeof(char) * (lot_dirs_output_str.length() + 1)));
+    lot_dirs_output_str_c = strdup(lot_dirs_output_str.c_str());
+    *output = lot_dirs_output_str_c;
+    return 0;
 }
 
 int lotman_get_matching_lots(const char *criteria_JSON_str, 
                             char ***output, 
                             char **err_msg) {
-    // std::array<std::string, 13> keys{"owners", "parents", "children", 
-    //                                  "paths", "dedicated_GB", "opportunistic_GB", 
-    //                                  "max_num_objects", "creation_time", "expiration_time", 
-    //                                  "deletion_time", "dedicated_usage_GB", "opportunistic_usage_GB", "num_objects"};
+
     if (!criteria_JSON_str) {
         if (err_msg) {*err_msg = strdup("The criteria string must not be nullpointer.");}
         return -1;
@@ -653,6 +640,7 @@ int lotman_get_matching_lots(const char *criteria_JSON_str,
     if (!err.empty()) {
         std::cerr << "Criteria JSON can't be parsed -- it's probably malformed!";
         std::cerr << err << std::endl;
+        return -1;
     }
 
     if (!criteria_JSON.is<picojson::object>()) {
@@ -669,6 +657,15 @@ int lotman_get_matching_lots(const char *criteria_JSON_str,
 
     std::vector<std::string> output_vec{};
     try {
+        std::array<std::string, 4> policy_attr_int_keys{{"max_num_objects", "creation_time", "expiration_time", "deletion_time"}};
+        std::array<std::string, 2> policy_attr_double_keys{{"dedicated_GB", "oppportunistic_GB"}};
+
+        std::array<std::string, 3> usage_keys{{"dedicated_usage_GB", "opportunistic_usage_GB", "num_objects"}};
+
+
+
+
+
 
         std::vector<std::vector<std::string>> intersect_vecs;
         for (iter; iter != criteria_input_obj.end(); ++iter) {
@@ -689,63 +686,139 @@ int lotman_get_matching_lots(const char *criteria_JSON_str,
             }
 
             else if (key == "parents") {
+                if (!value.is<picojson::array>()) {
+                    std::cerr << "Parents key expects an array, but doesn't recognize one -- it's probably malformed!" << std::endl;
+                    return -1;
+                }
+                picojson::array parents_arr = value.get<picojson::array>();
 
+                // get the sorted vector
+                std::vector<std::string> lots_from_parents_vec{lotman::Lot::get_lots_from_parents(parents_arr)};
+                intersect_vecs.push_back(lots_from_parents_vec);  
                 
             }
 
             else if (key == "children") {
+                if (!value.is<picojson::array>()) {
+                    std::cerr << "Children key expects an array, but doesn't recognize one -- it's probably malformed!" << std::endl;
+                    return -1;
+                }
+                picojson::array children_arr = value.get<picojson::array>();
 
-                
+                // get the sorted vector
+                std::vector<std::string> lots_from_children_vec{lotman::Lot::get_lots_from_children(children_arr)};
+                intersect_vecs.push_back(lots_from_children_vec);  
             }
 
             else if (key == "paths") {
+                if (!value.is<picojson::array>()) {
+                    std::cerr << "Paths key expects an array, but doesn't recognize one -- it's probably malformed!" << std::endl;
+                    return -1;
+                }
+                picojson::array paths_arr = value.get<picojson::array>();
 
+                // get the sorted vector
+                std::vector<std::string> lots_from_paths_vec{lotman::Lot::get_lots_from_paths(paths_arr)};
+                intersect_vecs.push_back(lots_from_paths_vec);  
                 
             }
 
-            else if (key == "dedicated_GB") {
+            else if (std::find(policy_attr_int_keys.begin(), policy_attr_int_keys.end(), key) != policy_attr_int_keys.end()) {
+                if (!value.is<picojson::object>()) {
+                    std::cerr << "Policy attributes key \"" << key << "\" expects an object, but doesn't recognize one -- it's probably malformed!" << std::endl;
+                    return -1;
+                }
+                picojson::object policy_attr_obj = value.get<picojson::object>();
+                auto policy_attr_iter = policy_attr_obj.begin();
+                if (policy_attr_iter == policy_attr_obj.end()) {
+                    std::cerr << "Something is wrong -- the policy attribute object for key \"" << key << "\" appears empty." << std::endl;
+                    return -1;
+                }
 
-                
+                std::string comparator;
+                int comp_value;
+                for (policy_attr_iter; policy_attr_iter != policy_attr_obj.end(); ++policy_attr_iter) {
+                    auto inner_key = policy_attr_iter->first;
+                    auto inner_value = policy_attr_iter->second;
+
+                    if (inner_key == "comparator") {
+                        if (!inner_value.is<std::string>()) {
+                            std::cerr << "Bad comparator for key \"" << key << "\"." << std::endl;
+                            return -1;
+                        }
+                        
+                        comparator = inner_value.get<std::string>();
+                    }
+                    else if (inner_key == "value") {
+                        if (!inner_value.is<double>()) {
+                            std::cerr << "Bad value for key \"" << key << "\"." << std::endl;
+                            return -1;
+                        }
+
+                        comp_value = static_cast<int>(inner_value.get<double>());
+                    }
+                    else {
+                        std::cerr << "The inner key \"" << inner_key << "\" for key \"" << key << "\" is not recognized." << std::endl;
+                        return -1;
+                    }
+
+                }
+
+                // get the sorted vector
+                std::vector<std::string> lots_from_policy_attr_vec{lotman::Lot::get_lots_from_int_policy_attr(key, comparator, comp_value)};
+                intersect_vecs.push_back(lots_from_policy_attr_vec);  
             }
 
-            else if (key == "oppportunistic_GB") {
+            else if (std::find(policy_attr_double_keys.begin(), policy_attr_double_keys.end(), key) != policy_attr_double_keys.end()) {
+                if (!value.is<picojson::object>()) {
+                    std::cerr << "Policy attributes key \"" << key << "\" expects an object, but doesn't recognize one -- it's probably malformed!" << std::endl;
+                    return -1;
+                }
+                picojson::object policy_attr_obj = value.get<picojson::object>();
+                auto policy_attr_iter = policy_attr_obj.begin();
+                if (policy_attr_iter == policy_attr_obj.end()) {
+                    std::cerr << "Something is wrong -- the policy attribute object for key \"" << key << "\" appears empty." << std::endl;
+                    return -1;
+                }
 
+                std::string comparator;
+                int comp_value;
+                for (policy_attr_iter; policy_attr_iter != policy_attr_obj.end(); ++policy_attr_iter) {
+                    auto inner_key = policy_attr_iter->first;
+                    auto inner_value = policy_attr_iter->second;
+
+                    if (inner_key == "comparator") {
+                        if (!inner_value.is<std::string>()) {
+                            std::cerr << "Bad comparator for key \"" << key << "\"." << std::endl;
+                            return -1;
+                        }
+                        
+                        comparator = inner_value.get<std::string>();
+                    }
+                    else if (inner_key == "value") {
+                        if (!inner_value.is<double>()) {
+                            std::cerr << "Bad value for key \"" << key << "\"." << std::endl;
+                            return -1;
+                        }
+
+                        comp_value = inner_value.get<double>();
+                    }
+                    else {
+                        std::cerr << "The inner key \"" << inner_key << "\" for key \"" << key << "\" is not recognized." << std::endl;
+                        return -1;
+                    }
+
+                }
                 
-            }
+                // get the sorted vector
+                std::vector<std::string> lots_from_policy_attr_vec{lotman::Lot::get_lots_from_double_policy_attr(key, comparator, comp_value)};
+                intersect_vecs.push_back(lots_from_policy_attr_vec);  
 
-            else if (key == "max_num_objects") {
 
-                
-            }
 
-            else if (key == "creation_time") {
 
-                
-            }
 
-            else if (key == "expiration_time") {
 
-                
-            }
-
-            else if (key == "deletion_time") {
-
-                
-            }
-
-            else if (key == "dedicated_usage_GB") {
-
-                
-            }
-
-            else if (key == "opportunistic_usage_GB") {
-
-                
-            }
-
-            else if (key == "owners") {
-
-                
             }
 
             else {
@@ -764,7 +837,7 @@ int lotman_get_matching_lots(const char *criteria_JSON_str,
             output_vec = intersect_vecs[0];
         }
 
-        // Multiple criteria supplied and multiple
+        // Multiple criteria supplied 
         else {
             std::set_intersection(intersect_vecs[0].begin(), intersect_vecs[0].end(),
                                   intersect_vecs[1].begin(), intersect_vecs[1].end(),
@@ -804,6 +877,57 @@ int lotman_get_matching_lots(const char *criteria_JSON_str,
     *output = lots_list_c;
     return 0;
 }
+
+int lotman_update_lot_usage(const char *lot_name, const char *update_JSON_str, char **er_msg) {
+    picojson::value update_JSON;
+
+    std::string err = picojson::parse(update_JSON, update_JSON_str);
+    if (!err.empty()) {
+        std::cerr << "Update JSON can't be parsed -- it's probably malformed!";
+        std::cerr << err << std::endl;
+        return -1;
+    }
+
+    if (!update_JSON.is<picojson::object>()) {
+        std::cerr << "Update JSON is not recognized as an object -- it's probably malformed!" << std::endl;
+        return -1;
+    }
+
+    auto usage_update_obj = update_JSON.get<picojson::object>();
+    auto iter = usage_update_obj.begin();
+    if (iter == usage_update_obj.end()) {
+        std::cerr << "Something is wrong -- Usage update JSON object appears empty." << std::endl;
+        return -1;
+    }
+
+    for (iter; iter != usage_update_obj.end(); ++iter) {
+        std::string key = iter->first;
+        auto value = iter->second;
+
+        std::array<std::string, 4> allowed_keys={"personal_GB", "personal_objects", "personal_GB_being_written", "personal_objects_being_written"};
+        if (std::find(allowed_keys.begin(), allowed_keys.end(), key) != allowed_keys.end()) {
+            if (!value.is<double>()) {
+                std::cerr << "The value associated with key \"" << key << "\" is not recognized as a number." << std::endl;
+                return -1;
+            }
+            bool rv = lotman::Lot::update_lot_usage(lot_name, key, value.get<double>());
+            if (!rv) {
+                std::cerr << "Call to lotman::Lot::update_lot_usage failed." << std::endl;
+                return -1;
+            }
+        }
+
+        else {
+            std::cerr << "Key \"" << key << "\" not recognized" << std::endl;
+            return -1;
+        }
+
+    }
+
+
+    return 0;
+}
+
 
 int lotman_check_db_health(char **err_msg) {
     return false;

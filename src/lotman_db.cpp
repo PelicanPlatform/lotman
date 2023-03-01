@@ -76,10 +76,10 @@ void initialize_lotdb( const std::string &lot_file) {
 
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS lot_usage ("
                         "lot_name PRIMARY KEY NOT NULL,"
-                        "GB_written,"
-                        "objects_written,"
-                        "bytes_being_written,"
-                        "objects_being_written)",
+                        "personal_GB,"
+                        "personal_objects,"
+                        "personal_GB_being_written,"
+                        "personal_objects_being_written)",
                     NULL, 0, &err_msg);
     if (rc) {
         std::cerr << "Sqlite lot_usage table creation failed: " << err_msg << std::endl;
@@ -92,6 +92,10 @@ void initialize_lotdb( const std::string &lot_file) {
 std::string get_lot_file() {
     const char *lot_home_dir = getenv("LOT_HOME"); // Env variable where Lot info is stored
 
+    if (!lot_home_dir) {
+        std::cerr << "The environment variable $LOT_HOME must be set to tell LotMan where it should store information!" << std::endl;
+        return "";
+    }
     // For now, make the assumption that $LOT_HOME is set and not null
     // TODO: Handle getenv("LOT_HOME") returning nullptr
     std::string lot_str(lot_home_dir);
@@ -334,6 +338,53 @@ bool lotman::Lot::store_lot(std::string lot_name,
 
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
     sqlite3_finalize(stmt);
+
+    // Initialize all lot usage parameters to 0
+    //sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, "INSERT INTO lot_usage VALUES (?, ?, ?, ?, ?)", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+
+    // Bind inputs to sql statement
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_double(stmt, 2, 0) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+        if (sqlite3_bind_int64(stmt, 3, 0) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+        if (sqlite3_bind_double(stmt, 4, 0) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+        if (sqlite3_bind_int64(stmt, 5, 0) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        int err = sqlite3_extended_errcode(db);
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
+    sqlite3_finalize(stmt);
+
     sqlite3_close(db);
 
     return true;
@@ -592,6 +643,7 @@ bool lotman::Lot::store_modifications(std::string dynamic_query,
     
 
     char *prepared_query = sqlite3_expanded_sql(stmt);
+    std::cout << "prepared query: " << prepared_query << std::endl;
     rc = sqlite3_step(stmt);
 
     if (rc != SQLITE_DONE) {

@@ -185,7 +185,7 @@ bool lotman::Lot::remove_lot(std::string lot_name,
 
 }
 
-bool lotman::Lot::update_lot(std::string lot_name, 
+bool lotman::Lot::update_lot_params(std::string lot_name, 
                 std::map<std::string, std::string> owners_map, 
                 std::map<std::string, std::string> parents_map, 
                 std::map<std::string, int> paths_map, 
@@ -286,6 +286,47 @@ bool lotman::Lot::update_lot(std::string lot_name,
     return true;
 }
 
+bool lotman::Lot::update_lot_usage(std::string lot_name, std::string key, double value) {
+
+    if (!lot_exists(lot_name)) {
+        std::cout << "Lot does not exist so its usage cannot be updated." << std::endl;
+        return false;
+    }
+
+    std::array<std::string, 2> allowed_int_keys={"personal_objects", "personal_objects_being_written"};
+    std::array<std::string, 2> allowed_double_keys={"personal_GB", "personal_GB_being_written"};
+
+    std::string update_usage_dynamic_query = "UPDATE lot_usage SET " + key + "=? WHERE lot_name=?;";
+    std::map<std::string, std::vector<int>> update_usage_str_map = {{lot_name, {2}}};
+    if (std::find(allowed_int_keys.begin(), allowed_int_keys.end(), key) != allowed_int_keys.end()) {
+        std::map<int, std::vector<int>> update_usage_int_map = {{value, {1}}};
+        bool rv = lotman::Lot::store_modifications(update_usage_dynamic_query, update_usage_str_map, update_usage_int_map);
+        std::cout << "rv 1 for store_modifications in update_usage: " << rv << std::endl;
+        if (!rv) {
+            std::cerr << "Call to lotman::Lot::store_modifications unsuccessful when updating lot usage" << std::endl;
+            return false;
+        }
+    }
+
+    else if (std::find(allowed_double_keys.begin(), allowed_double_keys.end(), key) != allowed_double_keys.end()) {
+        std::map<double, std::vector<int>> update_usage_double_map = {{value, {1}}};
+        std::map<int, std::vector<int>> plc_hldr_int_map;
+        bool rv = lotman::Lot::store_modifications(update_usage_dynamic_query, update_usage_str_map, plc_hldr_int_map, update_usage_double_map);
+        std::cout << "rv 2 for store_modifications in update_usage: " << rv << std::endl;
+        if (!rv) {
+            std::cerr << "Call to lotman::Lot::store_modifications unsuccessful when updating lot usage" << std::endl;
+            return false;
+        }
+    }
+
+    else {
+        std::cerr << "Key \"" << key << "\" not recognized" << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
 bool lotman::Lot::add_to_lot(std::string lot_name,
                              std::vector<std::string> owners,
                              std::vector<std::string> parents,
@@ -303,8 +344,6 @@ bool lotman::Lot::add_to_lot(std::string lot_name,
 std::vector<std::string> lotman::Lot::get_parent_names(std::string lot_name,
                                                        bool recursive,
                                                        bool get_self) {
-    
-    
     std::vector<std::string> lot_parents_vec;
     std::string parents_query;
     std::map<std::string, std::vector<int>> parents_query_str_map;
@@ -487,7 +526,10 @@ std::vector<std::string> lotman::Lot::get_lots_from_owners(picojson::array owner
     
     std::vector<std::string> matching_lots_vec{};
     std::string lots_from_owners_dynamic_query = "SELECT lot_name FROM owners WHERE owner = ?;";
+
+    int idx = 0;
     for (const auto &owner_obj : owners_arr) {
+        std::vector<std::string> temp_vec;
         if (!owner_obj.is<picojson::object>()) {
             std::cerr << "object in owners array is not recognized as an object." << std::endl;
             return matching_lots_vec;
@@ -509,24 +551,321 @@ std::vector<std::string> lotman::Lot::get_lots_from_owners(picojson::array owner
             bool recursive = recursive_val.get<bool>();
 
             std::map<std::string, std::vector<int>> lots_from_owners_dynamic_query_str_map{{owner, {1}}};
-            matching_lots_vec = lotman::Validator::SQL_get_matches(lots_from_owners_dynamic_query,lots_from_owners_dynamic_query_str_map);
+            temp_vec = lotman::Validator::SQL_get_matches(lots_from_owners_dynamic_query,lots_from_owners_dynamic_query_str_map);
 
             if (recursive) {
-                std::vector<std::string> tmp_vec;
-                for (const auto &lot : matching_lots_vec) {
+                std::vector<std::string> internal_temp_vec;
+                for (const auto &lot : temp_vec) {
                     std::vector<std::string> children_lots_vec = get_children_names(lot, true);
-                    tmp_vec.insert(tmp_vec.end(), children_lots_vec.begin(), children_lots_vec.end());
+                    internal_temp_vec.insert(internal_temp_vec.end(), children_lots_vec.begin(), children_lots_vec.end());
                 }
-                matching_lots_vec.insert(matching_lots_vec.end(), tmp_vec.begin(), tmp_vec.end());
+                temp_vec.insert(temp_vec.end(), internal_temp_vec.begin(), internal_temp_vec.end());
+            }
+            
+            // Sort temp_vec
+            sort(temp_vec.begin(), temp_vec.end());
+
+            // set matching_lots_vec
+            if (idx == 0) {
+                matching_lots_vec = temp_vec;
+            }
+
+            // intersection of matching_lots_vec with temp_vec
+            else {
+                std::vector<std::string> internal_temp_vec;
+                set_intersection(matching_lots_vec.begin(), matching_lots_vec.end(),
+                                 temp_vec.begin(), temp_vec.end(),
+                                 std::back_inserter(internal_temp_vec));
+                matching_lots_vec = internal_temp_vec;
             }
         }
+        ++idx;
     }
-    std::sort(matching_lots_vec.begin(), matching_lots_vec.end());
     auto last = std::unique(matching_lots_vec.begin(), matching_lots_vec.end());
     matching_lots_vec.erase(last, matching_lots_vec.end());
-
     return matching_lots_vec;
 }
+
+std::vector<std::string> lotman::Lot::get_lots_from_parents(picojson::array parents_arr) {
+
+    std::vector<std::string> matching_lots_vec;
+    std::string lots_from_parents_dynamic_query = "SELECT lot_name FROM parents WHERE parent = ?;";
+    
+    int idx = 0;
+    for (const auto &parent_obj : parents_arr) {
+        std::vector<std::string> temp_vec;
+        if (!parent_obj.is<picojson::object>()) {
+            std::cerr << "object in parents array is not recognized as an object." << std::endl;
+            return matching_lots_vec;
+        }
+        picojson::object parent_obj_internal = parent_obj.get<picojson::object>();
+        auto iter = parent_obj_internal.begin();
+        if (iter == parent_obj_internal.end()) {
+            std::cerr << "object in parents array appears empty";
+            return matching_lots_vec;
+        }
+
+        for(iter; iter != parent_obj_internal.end(); ++iter) {
+            auto parent = iter->first;
+            auto recursive_val = iter->second;
+            if (!recursive_val.is<bool>()) {
+                std::cerr << "recursive value for parent object is not recognized as a bool." << std::endl;
+                return matching_lots_vec;
+            }
+            bool recursive = recursive_val.get<bool>();
+
+            std::map<std::string, std::vector<int>> lots_from_parents_dynamic_query_str_map{{parent, {1}}};
+
+            temp_vec = lotman::Validator::SQL_get_matches(lots_from_parents_dynamic_query,lots_from_parents_dynamic_query_str_map);
+
+
+            if (recursive) {
+                std::vector<std::string> internal_temp_vec;
+                for (const auto &lot : temp_vec) {
+                    std::vector<std::string> children_lots_vec = get_children_names(lot, true);
+                    internal_temp_vec.insert(internal_temp_vec.end(), children_lots_vec.begin(), children_lots_vec.end());
+                }
+                temp_vec.insert(temp_vec.end(), internal_temp_vec.begin(), internal_temp_vec.end());
+            }
+
+            // Sort temp_vec
+            sort(temp_vec.begin(), temp_vec.end());
+
+            // set matching_lots_vec
+            if (idx == 0) {
+                matching_lots_vec = temp_vec;
+            }
+
+            // intersection of matching_lots_vec with temp_vec
+            else {
+                std::vector<std::string> internal_temp_vec;
+                set_intersection(matching_lots_vec.begin(), matching_lots_vec.end(),
+                                 temp_vec.begin(), temp_vec.end(),
+                                 std::back_inserter(internal_temp_vec));
+                matching_lots_vec = internal_temp_vec;
+            }
+        }
+        ++idx;
+    }
+    auto last = std::unique(matching_lots_vec.begin(), matching_lots_vec.end());
+    matching_lots_vec.erase(last, matching_lots_vec.end());
+    return matching_lots_vec;
+}
+
+std::vector<std::string> lotman::Lot::get_lots_from_children(picojson::array children_arr) {
+    std::vector<std::string> matching_lots_vec;
+    std::string lots_from_children_dynamic_query = "SELECT parent FROM parents WHERE lot_name = ?;";
+    
+    int idx = 0;
+    for (const auto &children_obj : children_arr) {
+        std::vector<std::string> temp_vec;
+        if (!children_obj.is<picojson::object>()) {
+            std::cerr << "object in children array is not recognized as an object." << std::endl;
+            return matching_lots_vec;
+        }
+        picojson::object children_obj_internal = children_obj.get<picojson::object>();
+        auto iter = children_obj_internal.begin();
+        if (iter == children_obj_internal.end()) {
+            std::cerr << "object in children array appears empty";
+            return matching_lots_vec;
+        }
+
+        for(iter; iter != children_obj_internal.end(); ++iter) {
+            auto children = iter->first;
+            auto recursive_val = iter->second;
+            if (!recursive_val.is<bool>()) {
+                std::cerr << "recursive value for children object is not recognized as a bool." << std::endl;
+                return matching_lots_vec;
+            }
+            bool recursive = recursive_val.get<bool>();
+
+            std::map<std::string, std::vector<int>> lots_from_children_dynamic_query_str_map{{children, {1}}};
+
+            temp_vec = lotman::Validator::SQL_get_matches(lots_from_children_dynamic_query,lots_from_children_dynamic_query_str_map);
+
+
+
+
+            if (recursive) {
+                std::vector<std::string> internal_temp_vec;
+                for (const auto &lot : temp_vec) {
+                    std::vector<std::string> parent_lots_vec = get_parent_names(lot, true);
+                    internal_temp_vec.insert(internal_temp_vec.end(), parent_lots_vec.begin(), parent_lots_vec.end());
+                }
+                temp_vec.insert(temp_vec.end(), internal_temp_vec.begin(), internal_temp_vec.end());
+            }
+
+            // Sort temp_vec
+            sort(temp_vec.begin(), temp_vec.end());
+
+            // set matching_lots_vec
+            if (idx == 0) {
+                matching_lots_vec = temp_vec;
+            }
+
+            // intersection of matching_lots_vec with temp_vec
+            else {
+                std::vector<std::string> internal_temp_vec;
+                set_intersection(matching_lots_vec.begin(), matching_lots_vec.end(),
+                                 temp_vec.begin(), temp_vec.end(),
+                                 std::back_inserter(internal_temp_vec));
+                matching_lots_vec = internal_temp_vec;
+            }
+        }
+        ++idx;
+    }
+    auto last = std::unique(matching_lots_vec.begin(), matching_lots_vec.end());
+    matching_lots_vec.erase(last, matching_lots_vec.end());
+    return matching_lots_vec;
+}
+
+std::vector<std::string> lotman::Lot::get_lots_from_paths(picojson::array path_arr) {
+    std::vector<std::string> matching_lots_vec{};
+    std::string lots_from_path_dynamic_query = "SELECT lot_name FROM paths WHERE path = ?;";
+
+    int idx = 0;
+    for (const auto &path_obj : path_arr) {
+        std::vector<std::string> temp_vec;
+        if (!path_obj.is<picojson::object>()) {
+            std::cerr << "object in path array is not recognized as an object." << std::endl;
+            return matching_lots_vec;
+        }
+        picojson::object path_obj_internal = path_obj.get<picojson::object>();
+        auto iter = path_obj_internal.begin();
+        if (iter == path_obj_internal.end()) {
+            std::cerr << "object in owners array appears empty";
+            return matching_lots_vec;
+        }
+
+        for(iter; iter != path_obj_internal.end(); ++iter) {
+            std::string path = iter->first;
+            auto recursive_val = iter->second;
+            if (!recursive_val.is<bool>()) {
+                std::cerr << "recursive value for path object is not recognized as a bool." << std::endl;
+                return matching_lots_vec;
+            }
+            bool recursive = recursive_val.get<bool>();
+
+            int fwd_slash_count = std::count(path.begin(), path.end(), '/');
+
+            
+            for (int iter = 0; iter<fwd_slash_count; ++iter) {
+                
+                std::map<std::string, std::vector<int>> lots_from_path_dynamic_query_str_map{{path, {1}}};
+                temp_vec = lotman::Validator::SQL_get_matches(lots_from_path_dynamic_query,lots_from_path_dynamic_query_str_map);
+
+                if (!temp_vec.size()==0) { // a lot with a matching prefix is found: 
+                    if (iter==0) { // If a lot has the entire path, the lot can be added without further checks
+                        break;
+                    }
+                    else { // otherwise, the lot may have a prefix of the path and we need to make sure the matching prefix has recursive set to true
+                        std::vector<std::string> recursive_temp_vec;
+                        std::string recursion_dynamic_query = "SELECT recursive FROM paths WHERE path = ?;";
+                        std::map<std::string, std::vector<int>> recursion_dynamic_query_str_map{{path, {1}}};
+                        recursive_temp_vec = lotman::Validator::SQL_get_matches(recursion_dynamic_query, recursion_dynamic_query_str_map);
+                        if (recursive_temp_vec[0]=="1") { // a hacky way to tell the bool value stored by SQLITE3 as an int and returned to me as a string.
+                            // safe to add the lot
+                            break;
+                        }
+                        else { // recursive set to NOT true -- this is not the lot you're looking for
+                            // Since each path belongs to only one stem (ie a path belongs explicitly to exactly one lot, and implicitly to that lot's parents)
+                            // it can safely be assumed that there was only 1 lot to check in temp_vec
+
+                            // That lot is not needed, so reset temp_vec
+                            temp_vec = {};
+                        }
+                    }
+                }
+                int prefix_location = path.rfind('/');
+                std::string prefix = path.substr(0, prefix_location);
+                path = prefix;
+            }
+
+            if (recursive) {
+                std::vector<std::string> internal_temp_vec;
+                for (const auto &lot : temp_vec) {
+                    std::vector<std::string> parent_lots_vec = get_parent_names(lot, true);
+                    internal_temp_vec.insert(internal_temp_vec.end(), parent_lots_vec.begin(), parent_lots_vec.end());
+                }
+                temp_vec.insert(temp_vec.end(), internal_temp_vec.begin(), internal_temp_vec.end());
+
+            }
+            // Sort temp_vec
+            sort(temp_vec.begin(), temp_vec.end());
+
+            // set matching_lots_vec
+            if (idx == 0) {
+                matching_lots_vec = temp_vec;
+            }
+
+            // intersection of matching_lots_vec with temp_vec
+            else {
+                std::vector<std::string> internal_temp_vec;
+                set_intersection(matching_lots_vec.begin(), matching_lots_vec.end(),
+                                 temp_vec.begin(), temp_vec.end(),
+                                 std::back_inserter(internal_temp_vec));
+                matching_lots_vec = internal_temp_vec;
+            }
+        }
+        ++idx;
+    }
+    auto last = std::unique(matching_lots_vec.begin(), matching_lots_vec.end());
+    matching_lots_vec.erase(last, matching_lots_vec.end());
+    return matching_lots_vec;
+}
+
+std::vector<std::string> lotman::Lot::get_lots_from_int_policy_attr(std::string key, std::string comparator, int comp_value) {
+
+    std::vector<std::string> matching_lots_vec;
+    std::array<std::string, 4> policy_attr_int_keys{{"max_num_objects", "creation_time", "expiration_time", "deletion_time"}};
+    std::array<std::string, 5> allowed_comparators{{">", "<", "=", "<=", ">="}};
+
+    std::string policy_attr_int_dynamic_query;
+    std::map<int, std::vector<int>> policy_attr_int_map;
+    if (std::find(policy_attr_int_keys.begin(), policy_attr_int_keys.end(), key) != policy_attr_int_keys.end()) {
+        policy_attr_int_dynamic_query = "SELECT lot_name FROM management_policy_attributes WHERE " + key + comparator + "?;";
+        policy_attr_int_map = {{comp_value, {1}}};
+    }
+
+    std::map<std::string, std::vector<int>> plc_hldr_str_map;
+    matching_lots_vec = lotman::Validator::SQL_get_matches(policy_attr_int_dynamic_query, plc_hldr_str_map, policy_attr_int_map);
+
+    // sort the return vector
+    std::sort(matching_lots_vec.begin(), matching_lots_vec.end());
+    return matching_lots_vec;
+}
+
+std::vector<std::string> lotman::Lot::get_lots_from_double_policy_attr(std::string key, std::string comparator, double comp_value) {
+
+    std::vector<std::string> matching_lots_vec;
+    std::array<std::string, 4> policy_attr_int_keys{{"dedicated_GB", "opportunistic_GB"}};
+    std::array<std::string, 5> allowed_comparators{{">", "<", "=", "<=", ">="}};
+
+    std::string policy_attr_int_dynamic_query;
+    std::map<double, std::vector<int>> policy_attr_double_map;
+    if (std::find(policy_attr_int_keys.begin(), policy_attr_int_keys.end(), key) != policy_attr_int_keys.end()) {
+        policy_attr_int_dynamic_query = "SELECT lot_name FROM management_policy_attributes WHERE " + key + comparator + "?;";
+        policy_attr_double_map = {{comp_value, {1}}};
+    }
+
+    std::map<std::string, std::vector<int>> plc_hldr_str_map;
+    std::map<int, std::vector<int>> plc_hldr_int_map;
+    matching_lots_vec = lotman::Validator::SQL_get_matches(policy_attr_int_dynamic_query, plc_hldr_str_map, plc_hldr_int_map, policy_attr_double_map);
+
+    std::sort(matching_lots_vec.begin(), matching_lots_vec.end());
+    return matching_lots_vec;
+}
+
+
+
+
+
+
+
+
+
+
+
 
 
 
