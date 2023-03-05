@@ -579,7 +579,11 @@ int lotman_get_policy_attributes(const char *lot_name,
     try {
         for (iter; iter!=policy_attributes_input_obj.end(); ++iter) {
             std::string key = iter->first;
-            int recursive = iter->second.get<bool>();
+            auto value = iter->second;
+            if (!value.is<bool>()) {
+                std::cerr << "The value for key \"" << key << "\" is not recognized as a bool." << std::endl;
+            }
+            int recursive = value.get<bool>();
             policy_attributes_output_obj[key] = picojson::value(lotman::Lot::get_restricting_attribute(lot_name, key, recursive));
         }
         std::string policy_attributes_output_str = picojson::value(policy_attributes_output_obj).serialize();
@@ -660,12 +664,7 @@ int lotman_get_matching_lots(const char *criteria_JSON_str,
         std::array<std::string, 4> policy_attr_int_keys{{"max_num_objects", "creation_time", "expiration_time", "deletion_time"}};
         std::array<std::string, 2> policy_attr_double_keys{{"dedicated_GB", "oppportunistic_GB"}};
 
-        std::array<std::string, 3> usage_keys{{"dedicated_usage_GB", "opportunistic_usage_GB", "num_objects"}};
-
-
-
-
-
+        std::array<std::string, 5> usage_keys{{"dedicated_GB_usage", "opportunistic_GB_usage", "num_objects_usage", "GB_being_written", "objects_being_written"}};
 
         std::vector<std::vector<std::string>> intersect_vecs;
         for (iter; iter != criteria_input_obj.end(); ++iter) {
@@ -712,7 +711,7 @@ int lotman_get_matching_lots(const char *criteria_JSON_str,
 
             else if (key == "paths") {
                 if (!value.is<picojson::array>()) {
-                    std::cerr << "Paths key expects an array, but doesn't recognize one -- it's probably malformed!" << std::endl;
+                    std::cerr << "Paths key expects an array value, but doesn't recognize one -- it's probably malformed!" << std::endl;
                     return -1;
                 }
                 picojson::array paths_arr = value.get<picojson::array>();
@@ -815,10 +814,71 @@ int lotman_get_matching_lots(const char *criteria_JSON_str,
                 intersect_vecs.push_back(lots_from_policy_attr_vec);  
 
 
+            }
 
+            else if (std::find(usage_keys.begin(), usage_keys.end(), key) != usage_keys.end()) {
+                if (!value.is<picojson::object>()) {
+                    std::cerr << "The usage key \"" << key << "\" expects an object value but doesn't recognize one -- it's probably malformed!";
+                    return -1;
+                }
+                picojson::object internal_obj = value.get<picojson::object>();
+                auto internal_iter = internal_obj.begin();
+                if (internal_iter == internal_obj.end()) {
+                    std::cerr << "Something is wrong -- the usage object for key \"" << key << "\" appears empty.";
+                    return -1;
+                }
+                std::string comparator;
+                double comp_val;
+                bool recursive;
+                for (internal_iter; internal_iter != internal_obj.end(); ++internal_iter) {
+                    std::string internal_key = internal_iter->first;
+                    auto internal_value = internal_iter->second;
+                    if (internal_key == "comparator") {
+                        if (!internal_value.is<std::string>()) {
+                            std::cerr << "The comparator for key \"" << key << "\" is not recognized as a string." << std::endl;
+                            return -1;
+                        }
+                        comparator = internal_value.get<std::string>();
+                    }
+                    else if (internal_key == "value") {
+                        std::array<std::string, 3> allowed_allotted_keys{{"dedicated_GB_usage", "opportunistic_GB_usage", "num_objects_usage"}};
+                        if (!internal_value.is<double>()) {       
+                            if (std::find(allowed_allotted_keys.begin(), allowed_allotted_keys.end(), key) != allowed_allotted_keys.end()) {
+                                if (!internal_value.is<std::string>()) {
+                                    std::cerr << "The comparator value for key \"" << key << "\" must either be a double, or the string 'allotted'." << std::endl;
+                                    return -1;
+                                }
+                                if (internal_value.get<std::string>() != "allotted") {
+                                    std::cerr << "The only recognized string comparator value for key \"" << key << "\" 'allotted'." << std::endl;
+                                    return -1;
+                                }
+                                comp_val = -1; //set to negative to indicate that "allotted" is the comp val
+                            }
+                            else {
+                                std::cerr << "The comparator for key \"" << key << "\" is not recognized as a double.";
+                            }
+                        }
+                        else {
+                            comp_val = internal_value.get<double>();
+                        }
+                    }
+                    else if (internal_key == "recursive") {
+                        if (!internal_value.is<bool>()) {
+                            std::cerr << "The recursive value for key \"" << key << "\" is not recognized as a bool." << std::endl;
+                            return -1;
+                        }
+                        recursive = internal_value.get<bool>();
+                    }
+                    else {
+                        std::cerr << "The internal key \"" << internal_key << "\" for key \"" << key << "\" is not recognized." << std::endl;
+                        return -1;
+                    }
 
+                }
 
-
+                // get the sorted vector
+                std::vector<std::string> lots_from_usage_vec{lotman::Lot::get_lots_from_usage(key, comparator, comp_val, recursive)};
+                intersect_vecs.push_back(lots_from_usage_vec);
             }
 
             else {
@@ -921,59 +981,77 @@ int lotman_update_lot_usage(const char *lot_name, const char *update_JSON_str, c
             std::cerr << "Key \"" << key << "\" not recognized" << std::endl;
             return -1;
         }
-
     }
-
 
     return 0;
 }
 
+int lotman_get_lot_usage(const char *lot_name, const char *usage_attributes_JSON_str, char **output, char **err_msg) {
+    if (!lot_name) {
+        if (err_msg) {*err_msg = strdup("Name for the lot whose usage is to be obtained must not be nullpointer.");}
+        return -1;
+    }
+
+    if (!usage_attributes_JSON_str) {
+        if (err_msg) {*err_msg = strdup("Usage attributes JSON for the lot whose usage is to be obtained must not be nullpointer.");}
+        return -1;
+    }
+
+    picojson::value usage_attributes_JSON;
+    
+    std::string err = picojson::parse(usage_attributes_JSON, usage_attributes_JSON_str);
+    if (!err.empty()) {
+        std::cerr << "Usage attributes JSON can't be parsed -- it's probably malformed!";
+        std::cerr << err << std::endl;
+        return -1;
+    }
+
+    if (!usage_attributes_JSON.is<picojson::object>()) {
+        std::cerr << "Usage JSON is not recognized as an object -- it's probably malformed!" << std::endl;
+        return -1;
+    }
+
+    auto usage_attrs_JSON_obj = usage_attributes_JSON.get<picojson::object>();
+    auto iter = usage_attrs_JSON_obj.begin();
+    if (iter == usage_attrs_JSON_obj.end()) {
+        std::cerr << "Something is wrong -- Usage update JSON object appears empty." << std::endl;
+        return -1;
+    }
+
+    std::array<std::string, 4> allowed_keys = {"dedicated_GB", "opportunistic_GB", "total_GB", "num_objects"};
+    picojson::object usage_output_obj;
+    try {
+        for (iter; iter != usage_attrs_JSON_obj.end(); ++iter) {
+            std::string key = iter->first;
+            auto value = iter->second;
+            if (std::find(allowed_keys.begin(), allowed_keys.end(), key) != allowed_keys.end()) {
+                if (!value.is<bool>()) {
+                    std::cerr << "The value for key \"" << key << "\" is not recognized as a bool." << std::endl;
+                    return -1;
+                }
+                bool recursive = value.get<bool>();
+                usage_output_obj[key] = picojson::value(lotman::Lot::get_lot_usage(lot_name,key, recursive));
+            }
+            else {
+                std::cerr << "The key \"" << key << "\" is not recognized" << std::endl;
+                return -1;
+            }
+        }
+        std::string usage_output_str = picojson::value(usage_output_obj).serialize();
+        auto usage_output_str_c = static_cast<char *>(malloc(sizeof(char) * (usage_output_str.length() + 1)));
+        usage_output_str_c = strdup(usage_output_str.c_str());
+        *output = usage_output_str_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }  
+}
 
 int lotman_check_db_health(char **err_msg) {
     return false;
 }
 
-
-
-
-// int lotman_get_lot_obj(const char *lot_JSON_str, char **output, char **err_msg) {
-//     if (!lot_JSON_str) {
-//         if (err_msg) {*err_msg = strdup("The lot JSON string must not be nullpointer.");}
-//         return -1;
-//     }
-//     picojson::value lot_JSON;
-//     std::string err = picojson::parse(lot_JSON, lot_JSON_str);
-//     if (!err.empty()) {
-//         std::cerr << "Lot JSON can't be parsed -- it's probably malformed!";
-//         std::cerr << err << std::endl;
-//     }
-//     if (!lot_JSON.is<picojson::object>()) {
-//         std::cerr << "Lot JSON is not recognized as an object -- it's probably malformed!" << std::endl;
-//         return -1;
-//     }
-//     auto lot_input_obj = lot_JSON.get<picojson::object>();
-//     auto iter = lot_input_obj.begin();
-//     if (iter == lot_input_obj.end()) {
-//         std::cerr << "Something is wrong -- the lot JSON object appears empty." << std::endl;
-//         return -1;
-//     }
-//     picojson::object lot_output_obj;
-//     try {
-//         for (iter; iter!=lot_input_obj.end(); ++iter) {
-//             std::string key = iter->first;
-//             int recursive = static_cast<int>(iter->second.get<double>());
-//             policy_attributes_output_obj[key] = picojson::value(lotman::Lot::get_restricting_attribute(lot_name, key, recursive));
-//         }
-//         std::string policy_attributes_output_str = picojson::value(policy_attributes_output_obj).serialize();
-//         auto policy_attributes_output_str_c = static_cast<char *>(malloc(sizeof(char) * (policy_attributes_output_str.length() + 1)));
-//         policy_attributes_output_str_c = strdup(policy_attributes_output_str.c_str());
-//         *output = policy_attributes_output_str_c;
-//         return 0;
-//     } 
-//     catch (std::exception &exc) {
-//         if (err_msg) {
-//             *err_msg = strdup(exc.what());
-//         }
-//         return -1;
-//     }
-// }

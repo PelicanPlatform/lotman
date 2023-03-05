@@ -10,8 +10,10 @@
 
 using namespace lotman;
 
-// TODO: Go through and make things const where they shoudl be declared as such
+// TODO: Go through and make things const where they should be declared as such
 // TODO: Go through and handle any cases where lot_exists should be checked!
+//       --> Starting to feel like this should be done one layer up...
+
 /**
  * Functions specific to Lot class
 */
@@ -286,8 +288,21 @@ bool lotman::Lot::update_lot_params(std::string lot_name,
     return true;
 }
 
-bool lotman::Lot::update_lot_usage(std::string lot_name, std::string key, double value) {
+bool lotman::Lot::update_lot_usage(std::string lot_name,
+                                   std::string key, 
+                                   double value) {
 
+    /*
+    Function Flow for update_lot_usage:
+    * Check that lot proper exists
+    * Sanitize inputs by making sure key is allowed/known
+    * Get the current usage, used to calculate delta for updating parents' children_* columns
+    * Calculate delta
+    * Update lot proper
+    * For each parent of lot proper, update children_key += delta
+    */
+
+    // Check for existence
     if (!lot_exists(lot_name)) {
         std::cout << "Lot does not exist so its usage cannot be updated." << std::endl;
         return false;
@@ -298,24 +313,84 @@ bool lotman::Lot::update_lot_usage(std::string lot_name, std::string key, double
 
     std::string update_usage_dynamic_query = "UPDATE lot_usage SET " + key + "=? WHERE lot_name=?;";
     std::map<std::string, std::vector<int>> update_usage_str_map = {{lot_name, {2}}};
+
+    // Sanitize inputs
     if (std::find(allowed_int_keys.begin(), allowed_int_keys.end(), key) != allowed_int_keys.end()) {
+        // Get the current value for the lot
+        std::string get_usage_query = "SELECT " + key + " FROM lot_usage WHERE lot_name = ?;";
+        std::map<std::string, std::vector<int>> get_usage_query_str_map{{lot_name, {1}}};
+        int current_usage = std::stoi(lotman::Validator::SQL_get_matches(get_usage_query, get_usage_query_str_map)[0]);
+        int delta = value - current_usage;
+
+        // Update lot proper
+        std::string update_usage_stmt = "UPDATE lot_usage SET " + key + "=? WHERE lot_name=?;";
+        std::map<std::string, std::vector<int>> update_usage_str_map = {{lot_name, {2}}};
         std::map<int, std::vector<int>> update_usage_int_map = {{value, {1}}};
         bool rv = lotman::Lot::store_modifications(update_usage_dynamic_query, update_usage_str_map, update_usage_int_map);
-        std::cout << "rv 1 for store_modifications in update_usage: " << rv << std::endl;
         if (!rv) {
             std::cerr << "Call to lotman::Lot::store_modifications unsuccessful when updating lot usage" << std::endl;
             return false;
         }
+
+        /* TODO: need some kind of recovery file if we start updating parents and then fail --> for each parent, store  in temp file current usage for key
+                 and delete temp file after done. Use a function "repair_db" that checks for existence of temp file and restores things to those values,
+                 deleting the temp file upon completion.
+        */
+
+        // Update parents
+        std::vector<std::string> parents_vec = get_parent_names(lot_name, true);
+
+        std::string children_key = "children" + key.substr(8);
+        std::string parent_usage_query = "SELECT " + children_key + " FROM lot_usage WHERE lot_name = ?;";
+        for (const auto &parent : parents_vec) {
+            std::map<std::string, std::vector<int>> parent_usage_query_str_map{{parent, {1}}};
+            int current_usage = std::stoi(lotman::Validator::SQL_get_matches(parent_usage_query, parent_usage_query_str_map)[0]);
+            std::string update_parent_usage_stmt = "UPDATE lot_usage SET " + children_key + "=? WHERE lot_name=?;";
+            std::map<std::string, std::vector<int>> update_parent_str_map{{parent, {2}}};
+            std::map<int, std::vector<int>> update_parent_int_map{{current_usage+delta, {1}}}; // Update children_key to current_usage + delta
+            rv = lotman::Lot::store_modifications(update_parent_usage_stmt, update_parent_str_map, update_parent_int_map);
+            if (!rv) {
+                std::cerr << "Call to lotman::Lot::store_modifications unsuccessful when updating lot parent usage." << std::endl;
+                return false;
+            }
+        }
     }
 
     else if (std::find(allowed_double_keys.begin(), allowed_double_keys.end(), key) != allowed_double_keys.end()) {
+        // Get the current value for the lot
+        std::string get_usage_query = "SELECT " + key + " FROM lot_usage WHERE lot_name = ?;";
+        std::map<std::string, std::vector<int>> get_usage_query_str_map{{lot_name, {1}}};
+        double current_usage = std::stod(lotman::Validator::SQL_get_matches(get_usage_query, get_usage_query_str_map)[0]);
+        double delta = value - current_usage;
+
+        // Update lot proper
+        std::string update_usage_stmt = "UPDATE lot_usage SET " + key + "=? WHERE lot_name=?;";
+        std::map<std::string, std::vector<int>> update_usage_str_map = {{lot_name, {2}}};
         std::map<double, std::vector<int>> update_usage_double_map = {{value, {1}}};
         std::map<int, std::vector<int>> plc_hldr_int_map;
         bool rv = lotman::Lot::store_modifications(update_usage_dynamic_query, update_usage_str_map, plc_hldr_int_map, update_usage_double_map);
-        std::cout << "rv 2 for store_modifications in update_usage: " << rv << std::endl;
         if (!rv) {
             std::cerr << "Call to lotman::Lot::store_modifications unsuccessful when updating lot usage" << std::endl;
             return false;
+        }
+
+        // Update parents
+        std::vector<std::string> parents_vec = get_parent_names(lot_name, true);
+
+        std::string children_key = "children" + key.substr(8);
+        std::string parent_usage_query = "SELECT " + children_key + " FROM lot_usage WHERE lot_name = ?;";
+        for (const auto &parent : parents_vec) {
+            std::map<std::string, std::vector<int>> parent_usage_query_str_map{{parent, {1}}};
+            double current_usage = std::stod(lotman::Validator::SQL_get_matches(parent_usage_query, parent_usage_query_str_map)[0]);
+            std::string update_parent_usage_stmt = "UPDATE lot_usage SET " + children_key + "=? WHERE lot_name=?;";
+            std::map<std::string, std::vector<int>> update_parent_str_map{{parent, {2}}};
+            std::map<double, std::vector<int>> update_parent_int_map{{current_usage+delta, {1}}}; // Update children_key to current_usage + delta
+            std::map<int, std::vector<int>> plc_hldr_int_map;
+            rv = lotman::Lot::store_modifications(update_parent_usage_stmt, update_parent_str_map, plc_hldr_int_map, update_parent_int_map);
+            if (!rv) {
+                std::cerr << "Call to lotman::Lot::store_modifications unsuccessful when updating lot parent usage." << std::endl;
+                return false;
+            }
         }
     }
 
@@ -325,6 +400,162 @@ bool lotman::Lot::update_lot_usage(std::string lot_name, std::string key, double
     }
 
     return true;
+}
+
+picojson::object lotman::Lot::get_lot_usage(const std::string lot_name,
+                                            const std::string key,
+                                            const bool recursive) {
+
+    // TODO: Introduce some notion of verbocity to give options for output, like:
+    // {"dedicated_GB" : 10} vs {"dedicated_GB" : {"personal": 5, "children" : 5}} vs {"dedicated_GB" : {"personal" : 5, "child1" : 2.5, "child2" : 2.5}}
+    // Think a bit more about whether this makes sense.
+
+    // TODO: Might be worthwhile to join some of these sections that share a common preamble
+
+    picojson::object output_obj;
+    std::array<std::string, 4> allowed_keys = {"dedicated_GB", "opportunistic_GB", "total_GB", "num_objects"};
+
+    std::vector<std::string> query_output;
+    std::vector<std::vector<std::string>> query_multi_out;
+
+    if (key == "dedicated_GB") {
+        if (recursive) {
+            std::string rec_ded_usage_query =   "SELECT "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB + lot_usage.children_GB <= management_policy_attributes.dedicated_GB THEN lot_usage.personal_GB + lot_usage.children_GB "
+                                                        "ELSE management_policy_attributes.dedicated_GB "
+                                                    "END AS total, " // For readability, not actually referencing these column names
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN management_policy_attributes.dedicated_GB "
+                                                        "ELSE lot_usage.personal_GB "
+                                                    "END AS personal_contrib, "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN '0' "
+                                                        "WHEN lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.dedicated_GB THEN management_policy_attributes.dedicated_GB - lot_usage.personal_GB "
+                                                        "ELSE lot_usage.children_GB "
+                                                    "END AS children_contrib "
+                                                "FROM lot_usage "
+                                                    "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                "WHERE lot_usage.lot_name = ?;";
+            std::map<std::string, std::vector<int>> ded_GB_query_str_map{{lot_name, {1}}};
+            query_multi_out = lotman::Validator::SQL_get_matches_multi_col(rec_ded_usage_query, 3, ded_GB_query_str_map);
+            output_obj["total"] = picojson::value(std::stod(query_multi_out[0][0]));
+            output_obj["personal_contrib"] = picojson::value(std::stod(query_multi_out[0][1]));
+            output_obj["children_contrib"] = picojson::value(std::stod(query_multi_out[0][2]));
+        }
+        else {
+            std::string ded_GB_query = "SELECT "
+                                            "CASE "
+                                                "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN management_policy_attributes.dedicated_GB "
+                                                "ELSE lot_usage.personal_GB "
+                                            "END AS total "
+                                        "FROM "
+                                            "lot_usage "
+                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                        "WHERE lot_usage.lot_name = ?;";
+        
+        std::map<std::string, std::vector<int>> ded_GB_query_str_map{{lot_name, {1}}};
+        query_output = lotman::Validator::SQL_get_matches(ded_GB_query, ded_GB_query_str_map);
+        output_obj["total"] = picojson::value(std::stod(query_output[0]));
+        }
+    }
+
+    else if (key == "opportunistic_GB") {
+        if (recursive) {
+            std::string rec_opp_usage_query =   "SELECT "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.opportunistic_GB +management_policy_attributes.dedicated_GB THEN management_policy_attributes.opportunistic_GB "
+                                                        "WHEN lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.dedicated_GB THEN lot_usage.personal_GB + lot_usage.children_GB - management_policy_attributes.dedicated_GB "
+                                                        "ELSE '0' "
+                                                    "END AS total, "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN management_policy_attributes.opportunistic_GB "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN  lot_usage.personal_GB - management_policy_attributes.dedicated_GB "
+                                                        "ELSE '0' "
+                                                    "END AS personal_contrib, "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN '0' "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB AND lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB - lot_usage.personal_GB "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB AND lot_usage.personal_GB + lot_usage.children_GB < management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN lot_usage.children_GB "
+                                                        "WHEN lot_usage.personal_GB < management_policy_attributes.dedicated_GB AND lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN management_policy_attributes.opportunistic_GB "
+                                                        "WHEN lot_usage.personal_GB < management_policy_attributes.dedicated_GB AND lot_usage.personal_GB + lot_usage.children_GB > management_policy_attributes.dedicated_GB THEN lot_usage.personal_GB + lot_usage.children_GB - management_policy_attributes.dedicated_GB "
+                                                        "ELSE '0' "
+                                                    "END AS children_contrib "
+                                                "FROM "
+                                                    "lot_usage "
+                                                    "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                "WHERE lot_usage.lot_name = ?;";
+            std::map<std::string, std::vector<int>> opp_GB_query_str_map{{lot_name, {1}}};
+            query_multi_out = lotman::Validator::SQL_get_matches_multi_col(rec_opp_usage_query, 3, opp_GB_query_str_map);
+            output_obj["total"] = picojson::value(std::stod(query_multi_out[0][0]));
+            output_obj["personal_contrib"] = picojson::value(std::stod(query_multi_out[0][1]));
+            output_obj["children_contrib"] = picojson::value(std::stod(query_multi_out[0][2]));
+        }
+        else {
+            std::string opp_GB_query =  "SELECT "
+                                            "CASE "
+                                                "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB + management_policy_attributes.opportunistic_GB THEN management_policy_attributes.opportunistic_GB "
+                                                "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN lot_usage.personal_GB = management_policy_attributes.dedicated_GB "
+                                                "ELSE '0' "
+                                            "END AS total "
+                                        "FROM "
+                                            "lot_usage "
+                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                        "WHERE lot_usage.lot_name = ?;";
+
+        std::map<std::string, std::vector<int>> opp_GB_query_str_map{{lot_name, {1}}};
+        query_output = lotman::Validator::SQL_get_matches(opp_GB_query, opp_GB_query_str_map);
+        output_obj["total"] = picojson::value(std::stod(query_output[0]));
+        }
+    }
+
+    else if (key == "total_GB") {
+        // Get the total usage
+        if (recursive) {
+            // Need to consider usage from children
+            std::string child_usage_GB_query = "SELECT personal_GB, children_GB FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> child_usage_GB_str_map{{lot_name, {1}}};
+            query_multi_out = lotman::Validator::SQL_get_matches_multi_col(child_usage_GB_query, 2, child_usage_GB_str_map);
+            output_obj["personal_contrib"] = picojson::value(std::stod(query_multi_out[0][0]));
+            output_obj["children_contrib"] = picojson::value(std::stod(query_multi_out[0][1]));
+        }
+        else {
+            std::string usage_GB_query = "SELECT personal_GB FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> usage_GB_str_map{{lot_name, {1}}};
+            query_output = lotman::Validator::SQL_get_matches(usage_GB_query, usage_GB_str_map);
+            output_obj["total"] = picojson::value(std::stod(query_output[0]));
+        }
+    }
+    
+    else if (key == "num_objects") {
+        if (recursive) {
+            std::string rec_num_obj_query = "SELECT personal_objects, children_objects FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> rec_num_obj_str_map{{lot_name, {1}}};
+            query_multi_out = lotman::Validator::SQL_get_matches_multi_col(rec_num_obj_query, 2, rec_num_obj_str_map);
+            output_obj["personal_contrib"] = picojson::value(std::stod(query_multi_out[0][0]));
+            output_obj["children_contrib"] = picojson::value(std::stod(query_multi_out[0][1]));
+        }
+        else {
+
+            std::string num_obj_query = "SELECT personal_objects FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> num_obj_str_map{{lot_name, {1}}};
+            query_output = lotman::Validator::SQL_get_matches(num_obj_query, num_obj_str_map);
+            output_obj["total"] = picojson::value(std::stod(query_output[0]));
+        }
+    }
+
+    else if (key == "GB_being_written") {
+        // TODO: implement this section
+    }
+    
+    else if (key == "objects_being_written") {
+        // TODO: implement this section
+    }
+
+    else {
+        std::cerr << "The key \"" << key << "\" is not recognized." << std::endl;
+    }
+    return output_obj;
 }
 
 bool lotman::Lot::add_to_lot(std::string lot_name,
@@ -856,7 +1087,196 @@ std::vector<std::string> lotman::Lot::get_lots_from_double_policy_attr(std::stri
     return matching_lots_vec;
 }
 
+std::vector<std::string> lotman::Lot::get_lots_from_usage(std::string key, std::string comparator, double comp_val, bool recursive) {
 
+    std::vector<std::string> matching_lots_vec;
+    // TODO: Go back at all levels and add support for GB_being_written and objects_being_written.
+    std::array<std::string, 6> usage_keys{{"dedicated_GB_usage", "opportunistic_GB_usage", "total_GB_usage", "num_objects_usage", "GB_being_written", "num_objects_being_written"}}; // TODO: Finish
+    std::array<std::string, 5> allowed_comparators{{">", "<", "=", "<=", ">="}};
+
+    if (std::find(allowed_comparators.begin(), allowed_comparators.end(), comparator) != allowed_comparators.end()) {
+    
+        if (key == "dedicated_GB_usage") {
+            if (recursive) {
+                if (comp_val <0) {
+                    std::string rec_ded_usage_query =   "SELECT "
+                                                            "lot_usage.lot_name "
+                                                        "FROM lot_usage "
+                                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                        "WHERE lot_usage.personal_GB + lot_usage.children_GB " + comparator + " management_policy_attributes.dedicated_GB;";
+                    
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(rec_ded_usage_query);
+                }
+                else {
+                    std::string rec_ded_usage_query =   "SELECT "
+                                                            "lot_usage.lot_name "
+                                                        "FROM lot_usage "
+                                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                        "WHERE lot_usage.personal_GB + lot_usage.children_GB " + comparator + " ?;";
+                    std::map<double, std::vector<int>> dbl_map{{comp_val, {1}}};
+                    std::map<std::string, std::vector<int>> plc_hldr_str_map;
+                    std::map<int, std::vector<int>> plc_hldr_int_map;
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(rec_ded_usage_query, plc_hldr_str_map, plc_hldr_int_map);
+                }
+            }
+            else {
+                if (comp_val < 0) {
+                    std::string ded_usage_query =   "SELECT "
+                                                            "lot_usage.lot_name "
+                                                        "FROM lot_usage "
+                                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                        "WHERE lot_usage.personal_GB " + comparator + " management_policy_attributes.dedicated_GB;";
+                    
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(ded_usage_query);
+                }
+                else {
+                    std::string ded_usage_query =   "SELECT "
+                                                            "lot_usage.lot_name "
+                                                        "FROM lot_usage "
+                                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                        "WHERE lot_usage.personal_GB " + comparator + " ?;";
+                    std::map<double, std::vector<int>> dbl_map{{comp_val, {1}}};
+                    std::map<std::string, std::vector<int>> plc_hldr_str_map;
+                    std::map<int, std::vector<int>> plc_hldr_int_map;
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(ded_usage_query, plc_hldr_str_map, plc_hldr_int_map);
+                }
+            }
+        }
+        else if (key == "opportunistic_GB_usage") {
+            if (recursive) {
+                if (comp_val <0) {
+                    std::string rec_opp_usage_query =   "SELECT "
+                                                            "lot_usage.lot_name "
+                                                        "FROM lot_usage "
+                                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                        "WHERE lot_usage.personal_GB + lot_usage.children_GB " + comparator + " management_policy_attributes.dedicated_GB + management_policy_attributes.opportunistic_GB;";
+                    
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(rec_opp_usage_query);
+                }
+                else {
+                    std::string rec_opp_usage_query =   "SELECT "
+                                                            "lot_usage.lot_name "
+                                                        "FROM lot_usage "
+                                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                        "WHERE lot_usage.personal_GB + lot_usage.children_GB " + comparator + " management_policy_attributes.dedicated_GB + ?;";
+                    std::map<double, std::vector<int>> dbl_map{{comp_val, {1}}};
+                    std::map<std::string, std::vector<int>> plc_hldr_str_map;
+                    std::map<int, std::vector<int>> plc_hldr_int_map;
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(rec_opp_usage_query, plc_hldr_str_map, plc_hldr_int_map);
+                }
+            }
+            else {
+                if (comp_val <0) {
+                    std::string opp_usage_query =   "SELECT "
+                                                            "lot_usage.lot_name "
+                                                        "FROM lot_usage "
+                                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                        "WHERE lot_usage.personal_GB " + comparator + " management_policy_attributes.dedicated_GB + management_policy_attributes.opportunistic_GB;";
+                    
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(opp_usage_query);
+                }
+                else {
+                    std::string opp_usage_query =   "SELECT "
+                                                            "lot_usage.lot_name "
+                                                        "FROM lot_usage "
+                                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                        "WHERE lot_usage.personal_GB " + comparator + " management_policy_attributes.dedicated_GB + ?;";
+                    std::map<double, std::vector<int>> dbl_map{{comp_val, {1}}};
+                    std::map<std::string, std::vector<int>> plc_hldr_str_map;
+                    std::map<int, std::vector<int>> plc_hldr_int_map;
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(opp_usage_query, plc_hldr_str_map, plc_hldr_int_map);
+                }
+            }
+        }
+        else if (key == "total_GB_usage") {
+            if (recursive) {
+                std::string rec_tot_usage_query =   "SELECT "
+                                                        "lot_usage.lot_name "
+                                                    "FROM lot_usage "
+                                                        "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                    "WHERE lot_usage.personal_GB " + comparator + " ?;";
+                std::map<double, std::vector<int>> dbl_map{{comp_val, {1}}};
+                std::map<std::string, std::vector<int>> plc_hldr_str_map;
+                std::map<int, std::vector<int>> plc_hldr_int_map;
+                matching_lots_vec = lotman::Validator::SQL_get_matches(rec_tot_usage_query, plc_hldr_str_map, plc_hldr_int_map);
+
+            }
+            else {
+                std::string tot_usage_query =   "SELECT "
+                                                    "lot_usage.lot_name "
+                                                "FROM lot_usage "
+                                                    "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                "WHERE lot_usage.personal_GB + lot_usage.children_GB " + comparator + " ?;";
+                std::map<double, std::vector<int>> dbl_map{{comp_val, {1}}};
+                std::map<std::string, std::vector<int>> plc_hldr_str_map;
+                std::map<int, std::vector<int>> plc_hldr_int_map;
+                matching_lots_vec = lotman::Validator::SQL_get_matches(tot_usage_query, plc_hldr_str_map, plc_hldr_int_map);
+            }
+        }
+
+        else if (key == "num_objects") {
+            if (recursive) {
+                if (comp_val < 0) {
+                    std::string rec_num_obj_query = "SELECT "
+                                                        "lot_usage.lot_name "
+                                                    "FROM lot_usage "
+                                                        "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                    "WHERE lot_usage.personal_objects + lot_usage.children_objects " + comparator + " management_policy_attributes.max_num_objects;";
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(rec_num_obj_query);
+                }
+                else {
+                    std::string rec_num_obj_query = "SELECT "
+                                                        "lot_usage.lot_name "
+                                                    "FROM lot_usage "
+                                                        "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                    "WHERE lot_usage.personal_objects + lot_usage.children_objects " + comparator + " ?;";
+                    std::map<std::string, std::vector<int>> plc_hldr_str_map;
+                    std::map<int, std::vector<int>> int_map{{static_cast<int>(comp_val), {1}}};
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(rec_num_obj_query, plc_hldr_str_map, int_map);
+                }
+            }
+            else {
+                if (comp_val < 0) {
+                    std::string num_obj_query = "SELECT "
+                                                    "lot_usage.lot_name "
+                                                "FROM lot_usage "
+                                                    "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                "WHERE lot_usage.personal_objects " + comparator + " management_policy_attributes.max_num_objects;";
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(num_obj_query);
+                }
+                else {
+                    std::string num_obj_query = "SELECT "
+                                                        "lot_usage.lot_name "
+                                                    "FROM lot_usage "
+                                                        "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                    "WHERE lot_usage.personal_objects " + comparator + " ?;";
+                    std::map<std::string, std::vector<int>> plc_hldr_str_map;
+                    std::map<int, std::vector<int>> int_map{{static_cast<int>(comp_val), {1}}};
+                    matching_lots_vec = lotman::Validator::SQL_get_matches(num_obj_query, plc_hldr_str_map, int_map);
+                }
+            }
+        }
+
+        // TODO: Come back and add creation_time expiration_time and deletion_time where needed
+
+        else if (key == "GB_being_written") {
+            // TODO: implement this section
+        }
+
+        else if (key == "num_objects_being_written") {
+            // TODO: implement this section
+
+        }
+    
+        else {
+            std::cerr << "The key \"" << key << "\" provided in lotman::Lot::get_lots_from_usage is not recognized." << std::endl;
+            return matching_lots_vec;
+        }
+    }
+
+    std::sort(matching_lots_vec.begin(), matching_lots_vec.end());
+    return matching_lots_vec;
+}
 
 
 

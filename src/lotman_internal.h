@@ -3,7 +3,7 @@
 #include <picojson.h>
 #include <vector>
 
-
+// TODO: Go through and prefer overloading functions vs distinguishing between int and double inputs
 
 class JsonException : public std::runtime_error {
 public:
@@ -51,7 +51,13 @@ class Lot {
                                std::vector<std::string> parents = std::vector<std::string>(),
                                std::map<std::string, int> paths_map = std::map<std::string, int>());
 
-        static bool update_lot_usage(std::string lot_name, std::string key, double value);
+        static bool update_lot_usage(std::string lot_name,
+                                     std::string key,
+                                     double value);
+
+        static picojson::object get_lot_usage(const std::string lot_name,
+                                              const std::string key,
+                                              const bool recursive);
 
         static std::vector<std::string> get_owners(std::string lot_name,
                                                    bool recursive=false);                               
@@ -59,8 +65,6 @@ class Lot {
         static std::vector<std::string> get_parent_names(std::string lot_name, 
                                                          bool recursive=false,
                                                          bool get_self=false);
-
-
 
         static std::vector<std::string> get_children_names(std::string lot_name,
                                                            const bool recursive=false,
@@ -85,7 +89,7 @@ class Lot {
 
         static std::vector<std::string> get_lots_from_double_policy_attr(std::string key, std::string comparator, double comp_value);
 
-
+        static std::vector<std::string> get_lots_from_usage(std::string key, std::string comparator, double comp_val, bool recursive);
 
     private:
         static bool store_lot(std::string lot_name, 
@@ -122,6 +126,8 @@ class Validator {
 
     private:
         static std::vector<std::string> SQL_get_matches(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
+        static std::vector<std::vector<std::string>> SQL_get_matches_multi_col(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
+
 };
 
 

@@ -95,14 +95,22 @@ namespace {
 
     TEST(LotManTest, SetGetUsageTest) {
         char *err_msg;
-        const char *lot = "lot4";
-        const char *usage_update_JSON = "{\"personal_GB\":10.5, \"personal_objects\":4, \"personal_GB_being_written\":2.2, \"personal_objects_being_written\":2}";
-        int rv = lotman_update_lot_usage(lot, usage_update_JSON, &err_msg);
+        const char *lot4 = "lot4";
+        const char *usage1_update_JSON = "{\"personal_GB\":10.5, \"personal_objects\":4, \"personal_GB_being_written\":2.2, \"personal_objects_being_written\":2}";
+        int rv = lotman_update_lot_usage(lot4, usage1_update_JSON, &err_msg);
         ASSERT_TRUE(rv == 0);
 
-        // char *output;
-        // const char *usage_query_JSON = "{\"personal_GB\"}";
-        // rv = lotman_get_lot_usage(lot, &output, &err_msg);
+        const char *lot5 = "lot5";
+        const char *usage2_update_JSON = "{\"personal_GB\":3.5, \"personal_objects\":7, \"personal_GB_being_written\":1.2, \"personal_objects_being_written\":5}";
+        rv = lotman_update_lot_usage(lot5, usage2_update_JSON, &err_msg);
+        ASSERT_TRUE(rv == 0);
+
+        char *output;
+        const char *usage_query_JSON = "{\"dedicated_GB\": true, \"opportunistic_GB\": true, \"total_GB\": true}";
+        rv = lotman_get_lot_usage(lot5, usage_query_JSON, &output, &err_msg);
+        ASSERT_TRUE(rv == 0);
+        std::cout << output << std::endl;
+        free(output);
         
         // parse the output and make sure it's as expected
     }
@@ -178,12 +186,14 @@ namespace {
         const char *criteria4_JSON = "{\"paths\":[{\"/a/path\":false},{\"/another/path/1/2\":true}]}"; //{\"/a/path\":false},
         const char *criteria5_JSON = "{\"paths\":[{\"/another/path/1/2\":true}]}";
         const char *criteria6_JSON = "{\"dedicated_GB\":{\"comparator\":\">=\", \"value\":5}, \"max_num_objects\":{\"comparator\":\">=\", \"value\":50}}";
+        const char *criteria7_JSON = "{\"dedicated_GB_usage\":{\"comparator\":\">=\", \"value\":\"allotted\", \"recursive\": false}}";
         char **output;
         char **output2;
         char **output3;
         char **output4;
         char **output5;
         char **output6;
+        char **output7;
 
         int rv = lotman_get_matching_lots(criteria1_JSON, &output, &err_msg);
         ASSERT_TRUE(rv == 0);
@@ -227,6 +237,13 @@ namespace {
         }
         std::cout << std::endl;
         lotman_free_string_list(output6);
+
+        rv = lotman_get_matching_lots(criteria7_JSON, &output7, &err_msg);
+        for (int iter = 0; output7[iter]; iter++) {
+            std::cout << output7[iter] << std::endl;
+        }
+        std::cout << std::endl;
+        lotman_free_string_list(output7);
     }
 
     TEST(LotManTest, GetVersionTest) {

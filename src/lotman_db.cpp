@@ -77,9 +77,13 @@ void initialize_lotdb( const std::string &lot_file) {
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS lot_usage ("
                         "lot_name PRIMARY KEY NOT NULL,"
                         "personal_GB,"
+                        "children_GB,"
                         "personal_objects,"
+                        "children_objects,"
                         "personal_GB_being_written,"
-                        "personal_objects_being_written)",
+                        "children_GB_being_written,"
+                        "personal_objects_being_written,"
+                        "children_objects_being_written)",
                     NULL, 0, &err_msg);
     if (rc) {
         std::cerr << "Sqlite lot_usage table creation failed: " << err_msg << std::endl;
@@ -340,8 +344,7 @@ bool lotman::Lot::store_lot(std::string lot_name,
     sqlite3_finalize(stmt);
 
     // Initialize all lot usage parameters to 0
-    //sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, "INSERT INTO lot_usage VALUES (?, ?, ?, ?, ?)", -1, &stmt, NULL);
+    rc = sqlite3_prepare_v2(db, "INSERT INTO lot_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
         return false;
@@ -353,25 +356,24 @@ bool lotman::Lot::store_lot(std::string lot_name,
         sqlite3_close(db);
         return false;
     }
-    if (sqlite3_bind_double(stmt, 2, 0) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return false;
+
+
+    // Initialize lot_usage values to 0 (lot_usage must be updated later)
+    std::array<int, 4> double_bind_arr{{2,3,6,7}};
+    std::array<int, 4> int_bind_arr{{4,5,8,9}};
+    for (const auto &index : double_bind_arr) {
+        if (sqlite3_bind_double(stmt, index, 0) != SQLITE_OK) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return false;
+        }
     }
-        if (sqlite3_bind_int64(stmt, 3, 0) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return false;
-    }
-        if (sqlite3_bind_double(stmt, 4, 0) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return false;
-    }
-        if (sqlite3_bind_int64(stmt, 5, 0) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
-        sqlite3_close(db);
-        return false;
+    for (const auto &index : int_bind_arr) {
+        if (sqlite3_bind_int64(stmt, index, 0) != SQLITE_OK) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return false;
+        }
     }
 
     rc = sqlite3_step(stmt);
@@ -384,7 +386,6 @@ bool lotman::Lot::store_lot(std::string lot_name,
 
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
     sqlite3_finalize(stmt);
-
     sqlite3_close(db);
 
     return true;
@@ -582,6 +583,95 @@ std::vector<std::string> lotman::Validator::SQL_get_matches(std::string dynamic_
 
 }
 
+
+
+std::vector<std::vector<std::string>> lotman::Validator::SQL_get_matches_multi_col(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map, std::map<int, std::vector<int>> int_map, std::map<double, std::vector<int>> double_map) { 
+    std::vector<std::vector<std::string>> data_vec;
+
+    auto lot_fname = get_lot_file();
+    if (lot_fname.size() == 0) {return data_vec;}
+
+    sqlite3 *db;
+    int rc = sqlite3_open(lot_fname.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return data_vec;
+    }
+
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, dynamic_query.c_str(), -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        std::cout << "Can't prepare get_matches query" << std::endl;
+
+        sqlite3_close(db);
+        return data_vec;
+    }
+
+
+    for (const auto & key : str_map) {
+        for (const auto & value : key.second) {
+            if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+                std::cout << "problem with str_map binding" << std::endl;
+                sqlite3_finalize(stmt);
+                sqlite3_close(db);
+                return data_vec;
+            }
+        }
+    }
+    
+
+    for (const auto & key : int_map) {
+        for (const auto & value : key.second) {
+            if (sqlite3_bind_int(stmt, value, key.first) != SQLITE_OK) {
+                std::cout << "problem with int_map binding" << std::endl;
+                sqlite3_finalize(stmt);
+                sqlite3_close(db);
+                return data_vec;
+            }
+        }
+    }
+    
+
+    for (const auto & key : double_map) {
+        for (const auto & value : key.second) {
+            if (sqlite3_bind_double(stmt, value, key.first) != SQLITE_OK) {
+                std::cout << "problem with double map binding" << std::endl;
+                sqlite3_finalize(stmt);
+                sqlite3_close(db);
+                return data_vec;
+            }
+        }
+    }
+    
+
+    rc = sqlite3_step(stmt);
+    while (rc == SQLITE_ROW) {
+        std::vector<std::string> internal_data_vec;
+        for (int iter = 0; iter< num_returns; ++iter) {
+            const unsigned char *_data = sqlite3_column_text(stmt, iter);
+            std::string data(reinterpret_cast<const char *>(_data));
+            internal_data_vec.push_back(data);
+        }
+        data_vec.push_back(internal_data_vec);
+        rc = sqlite3_step(stmt);
+    }
+    if (rc == SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return data_vec;
+    }
+    else {
+        std::cout << "in rc != sqlite_done" << std::endl;
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return data_vec;
+    }
+
+}
+
+
+
+
 bool lotman::Lot::store_modifications(std::string dynamic_query,
                                       std::map<std::string, std::vector<int>> str_map,
                                       std::map<int,std::vector<int>> int_map,
@@ -599,8 +689,8 @@ bool lotman::Lot::store_modifications(std::string dynamic_query,
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, dynamic_query.c_str(), -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
-        std::cout << "Can't prepare modify_lot query" << std::endl;
-        std::cout << "modify lot query looks like: " << dynamic_query << std::endl;
+        std::cout << "Can't prepare modify_lot query!" << std::endl;
+        std::cout << "Modify lot query looks like: " << dynamic_query << std::endl;
         std::cout << "rc = " << rc << std::endl;
         sqlite3_close(db);
         return false;
@@ -642,8 +732,7 @@ bool lotman::Lot::store_modifications(std::string dynamic_query,
     }
     
 
-    char *prepared_query = sqlite3_expanded_sql(stmt);
-    std::cout << "prepared query: " << prepared_query << std::endl;
+    // char *prepared_query = sqlite3_expanded_sql(stmt); // Useful to print for debugging
     rc = sqlite3_step(stmt);
 
     if (rc != SQLITE_DONE) {
