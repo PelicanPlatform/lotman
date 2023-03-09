@@ -6,7 +6,6 @@
 extern "C" {
 #endif
 
-typedef void * Lot;
 
 /**
  * API for getting LotMan library version.
@@ -35,6 +34,7 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
 */
 int lotman_remove_lot(const char *lot_name, bool assign_LTBR_parent_as_parent_to_orphans, bool assign_LTBR_parent_as_parent_to_non_orphans, bool assign_policy_to_children, const char *lotman_context, char **err_msg);
 int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
+int lotman_add_to_lot(const char *lot_name, const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
 int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg);
 int lotman_is_root(const char *lot_name, char **err_msg);
 int lotman_get_owners(const char *lot_name, const bool recursive, char ***output, char **err_msg);

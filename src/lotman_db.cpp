@@ -6,9 +6,10 @@
 #include <iostream>
 #include <sys/stat.h>
 
-#ifndef PICOJSON_USE_INT64
-#define PICOJSON_USE_INT64
-#endif
+// This shouldn't cause issues, but defining and using int_64 causes some things to fail.
+// #ifndef PICOJSON_USE_INT64
+// #define PICOJSON_USE_INT64
+// #endif
 #include <picojson.h>
 
 #include "lotman_internal.h"
@@ -30,9 +31,8 @@ void initialize_lotdb( const std::string &lot_file) {
 
     char *err_msg = nullptr;
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS owners ("
-                        "lot_name NOT NULL,"
-                        "owner NOT NULL,"
-                        "PRIMARY KEY (lot_name, owner))",
+                        "lot_name PRIMARY KEY NOT NULL,"
+                        "owner NOT NULL)",
                     NULL, 0, &err_msg);
     if (rc) {
         std::cerr << "Sqlite owners table creation failed: " << err_msg << std::endl;
@@ -52,8 +52,7 @@ void initialize_lotdb( const std::string &lot_file) {
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS paths ("
                         "lot_name NOT NULL,"
                         "path NOT NULL,"
-                        "recursive,"
-                        "PRIMARY KEY (lot_name, path))",
+                        "recursive NOT_NULL)",
                     NULL, 0, &err_msg);
     if (rc) {
         std::cerr << "Sqlite paths table creation failed: " << err_msg << std::endl;
@@ -76,14 +75,14 @@ void initialize_lotdb( const std::string &lot_file) {
 
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS lot_usage ("
                         "lot_name PRIMARY KEY NOT NULL,"
-                        "personal_GB,"
-                        "children_GB,"
-                        "personal_objects,"
-                        "children_objects,"
-                        "personal_GB_being_written,"
-                        "children_GB_being_written,"
-                        "personal_objects_being_written,"
-                        "children_objects_being_written)",
+                        "self_GB NOT NULL,"
+                        "children_GB NOT NULL,"
+                        "self_objects NOT NULL,"
+                        "children_objects NOT NULL,"
+                        "self_GB_being_written NOT NULL,"
+                        "children_GB_being_written NOT NULL,"
+                        "self_objects_being_written NOT NULL,"
+                        "children_objects_being_written NOT NULL)",
                     NULL, 0, &err_msg);
     if (rc) {
         std::cerr << "Sqlite lot_usage table creation failed: " << err_msg << std::endl;
@@ -121,11 +120,268 @@ std::string get_lot_file() {
 }
 } //namespace
 
+
+
+
+
+bool lotman::Lot2::write_new() {
+    auto lot_fname = get_lot_file();
+
+    sqlite3 *db;
+    int rc = sqlite3_open(lot_fname.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_stmt *owner_stmt;
+    rc = sqlite3_prepare_v2(db, "INSERT INTO owners VALUES (?, ?)", -1, &owner_stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+
+    // Bind inputs to sql statement
+    if (sqlite3_bind_text(owner_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(owner_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_text(owner_stmt, 2, owner.c_str(), owner.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(owner_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    rc = sqlite3_step(owner_stmt);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(owner_stmt);
+        sqlite3_close(db);
+        return false;
+    } 
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
+    sqlite3_finalize(owner_stmt);   
+
+    for (const auto& parent : parents) {
+        sqlite3_stmt *parent_stmt;
+        rc = sqlite3_prepare_v2(db, "INSERT INTO parents VALUES (?, ?)", -1, &parent_stmt, NULL);
+        if (rc != SQLITE_OK) {
+            sqlite3_close(db);
+            return false;
+        }
+
+        // Bind inputs to sql statement
+        if (sqlite3_bind_text(parent_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+            sqlite3_finalize(parent_stmt);
+            sqlite3_close(db);
+            return false;
+        }
+        if (sqlite3_bind_text(parent_stmt, 2, parent.c_str(), parent.size(), SQLITE_STATIC) != SQLITE_OK) {
+            sqlite3_finalize(parent_stmt);
+            sqlite3_close(db);
+            return false;
+        }
+        rc = sqlite3_step(parent_stmt);
+        if (rc != SQLITE_DONE) {
+            int err = sqlite3_extended_errcode(db);
+            sqlite3_finalize(parent_stmt);
+            sqlite3_close(db);
+            return false;
+        } 
+        sqlite3_exec(db, "COMMIT", 0, 0, 0);
+        sqlite3_finalize(parent_stmt);   
+    }
+
+
+    // Paths
+    for (const auto& path : paths) {
+        sqlite3_stmt *stmt;
+
+        rc = sqlite3_prepare_v2(db, "INSERT INTO paths VALUES (?, ?, ?)", -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            sqlite3_close(db);
+            return false;
+        }
+
+        // Bind inputs to sql statement
+        if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return false;
+        }
+        if (sqlite3_bind_text(stmt, 2, path["path"].get<std::string>().c_str(),  path["path"].get<std::string>().size(), SQLITE_STATIC) != SQLITE_OK) {
+            std::cout << "in path bind text" << std::endl;
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return false;
+        }
+
+        if (sqlite3_bind_int(stmt, 3, static_cast<int>(path["recursive"].get<bool>())) != SQLITE_OK) {
+            std::cout << "in path bind int/bool" << std::endl;
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return false;
+        }
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) {
+            int err = sqlite3_extended_errcode(db);
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return false;
+        } 
+        sqlite3_exec(db, "COMMIT", 0, 0, 0);
+        sqlite3_finalize(stmt);     
+    }
+
+    // Set up management policy attributes
+    sqlite3_stmt *man_pol_attr_stmt;
+    rc = sqlite3_prepare_v2(db, "INSERT INTO management_policy_attributes VALUES (?, ?, ?, ?, ?, ?, ?)", -1, &man_pol_attr_stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+
+    // Bind inputs to sql statement
+    if (sqlite3_bind_text(man_pol_attr_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_double(man_pol_attr_stmt, 2, man_policy_attr.dedicated_GB) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_double(man_pol_attr_stmt, 3, man_policy_attr.opportunistic_GB) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_int64(man_pol_attr_stmt, 4, man_policy_attr.max_num_objects) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_int64(man_pol_attr_stmt, 5, man_policy_attr.creation_time) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_int64(man_pol_attr_stmt, 6, man_policy_attr.expiration_time) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_int64(man_pol_attr_stmt, 7, man_policy_attr.deletion_time) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    rc = sqlite3_step(man_pol_attr_stmt);
+    if (rc != SQLITE_DONE) {
+        int err = sqlite3_extended_errcode(db);
+        sqlite3_finalize(man_pol_attr_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
+    sqlite3_finalize(man_pol_attr_stmt);
+
+
+// Initialize all lot usage parameters to 0
+    sqlite3_stmt *init_stmt;
+    rc = sqlite3_prepare_v2(db, "INSERT INTO lot_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", -1, &init_stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+
+    // Bind inputs to sql statement
+    if (sqlite3_bind_text(init_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_double(init_stmt, 2, usage.self_GB) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_double(init_stmt, 3, usage.children_GB) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    
+
+    if (sqlite3_bind_int64(init_stmt, 4, usage.self_objects) != SQLITE_OK) {
+            sqlite3_finalize(init_stmt);
+            sqlite3_close(db);
+            return false;
+    }
+
+    if (sqlite3_bind_int64(init_stmt, 5, usage.children_objects) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_double(init_stmt, 6, usage.self_GB_being_written) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_double(init_stmt, 7, usage.children_GB_being_written) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_int64(init_stmt, 8, usage.self_objects_being_written) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    if (sqlite3_bind_int64(init_stmt, 9, usage.children_objects_being_written) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    rc = sqlite3_step(init_stmt);
+    if (rc != SQLITE_DONE) {
+        //int err = sqlite3_extended_errcode(db);
+        sqlite3_finalize(init_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
+    sqlite3_finalize(init_stmt);
+    sqlite3_close(db);
+
+    std::cout << "write_new returning true" << std::endl;
+    return true;
+
+}
+
+
+
+
+
+
+
 bool lotman::Lot::store_lot(std::string lot_name, 
-                            std::vector<std::string> owners, 
+                            std::string owner, 
                             std::vector<std::string> parents, 
                             std::map<std::string, int> paths_map, 
                             std::map<std::string, int> management_policy_attrs_int_map, 
+                            std::map<std::string, unsigned long long> management_policy_attrs_tmstmp_map,
                             std::map<std::string, double> management_policy_attrs_double_map) {    
     // Get the lot db and open it
     auto lot_fname = get_lot_file();
@@ -138,39 +394,37 @@ bool lotman::Lot::store_lot(std::string lot_name,
     }
 
     // Insertion of owners into owners table
-    if (owners.empty()) {
-        std::cerr << "Something is wrong, owners vector is empty." << std::endl;
+    if (owner.size() == 0) {
+        std::cerr << "Something is wrong, owner string is empty." << std::endl;
         return false;
     }
 
-    for (auto & owner_iter : owners) {
-        sqlite3_stmt *stmt;
-        rc = sqlite3_prepare_v2(db, "INSERT INTO owners VALUES (?, ?)", -1, &stmt, NULL);
-        if (rc != SQLITE_OK) {
-            sqlite3_close(db);
-            return false;
-        }
-
-        // Bind inputs to sql statement
-        if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
-            sqlite3_finalize(stmt);
-            sqlite3_close(db);
-            return false;
-        }
-        if (sqlite3_bind_text(stmt, 2, owner_iter.c_str(), owner_iter.size(), SQLITE_STATIC) != SQLITE_OK) {
-            sqlite3_finalize(stmt);
-            sqlite3_close(db);
-            return false;
-        }
-        rc = sqlite3_step(stmt);
-        if (rc != SQLITE_DONE) {
-            sqlite3_finalize(stmt);
-            sqlite3_close(db);
-            return false;
-        } 
-        sqlite3_exec(db, "COMMIT", 0, 0, 0);
-        sqlite3_finalize(stmt);   
+    sqlite3_stmt *owner_stmt;
+    rc = sqlite3_prepare_v2(db, "INSERT INTO owners VALUES (?, ?)", -1, &owner_stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
     }
+
+    // Bind inputs to sql statement
+    if (sqlite3_bind_text(owner_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(owner_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_bind_text(owner_stmt, 2, owner.c_str(), owner.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(owner_stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    rc = sqlite3_step(owner_stmt);
+    if (rc != SQLITE_DONE) {
+        sqlite3_finalize(owner_stmt);
+        sqlite3_close(db);
+        return false;
+    } 
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
+    sqlite3_finalize(owner_stmt);   
 
     // Insertion of values into parents table
     if (parents.empty()) {
@@ -254,10 +508,11 @@ bool lotman::Lot::store_lot(std::string lot_name,
 
     // Insertion of values into management_policy_attrs table
     double dedicated_GB, opportunistic_GB;
-    int max_num_objects, creation_time, expiration_time, deletion_time;
+    int max_num_objects;
+    unsigned long long creation_time, expiration_time, deletion_time;
     
-    if (management_policy_attrs_int_map.empty() || management_policy_attrs_double_map.empty()) {
-        std::cerr << "Something is wrong, either the management_policy_attrs_int/double map appears empty." << std::endl;
+    if (management_policy_attrs_int_map.empty() || management_policy_attrs_tmstmp_map.empty() || management_policy_attrs_double_map.empty()) {
+        std::cerr << "Something is wrong, either the management_policy_attrs_int/timestamp/double map appears empty." << std::endl;
         sqlite3_close(db);
         return false;
     }
@@ -266,14 +521,17 @@ bool lotman::Lot::store_lot(std::string lot_name,
         if ( management_policy_attr_int.first == "max_num_objects") {
             max_num_objects = management_policy_attr_int.second;
         }
-        if (management_policy_attr_int.first == "creation_time") {
-            creation_time = management_policy_attr_int.second;
+    }
+
+    for (auto &management_policy_attrs_tmstmp : management_policy_attrs_tmstmp_map) {
+        if (management_policy_attrs_tmstmp.first == "creation_time") {
+            creation_time = management_policy_attrs_tmstmp.second;
         }
-        if (management_policy_attr_int.first == "expiration_time") {
-            expiration_time = management_policy_attr_int.second;
+        if (management_policy_attrs_tmstmp.first == "expiration_time") {
+            expiration_time = management_policy_attrs_tmstmp.second;
         }
-        if (management_policy_attr_int.first == "deletion_time") {
-            deletion_time = management_policy_attr_int.second;
+        if (management_policy_attrs_tmstmp.first == "deletion_time") {
+            deletion_time = management_policy_attrs_tmstmp.second;
         }
     }
 
@@ -288,71 +546,72 @@ bool lotman::Lot::store_lot(std::string lot_name,
 
 
 
-    sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, "INSERT INTO management_policy_attributes VALUES (?, ?, ?, ?, ?, ?, ?)", -1, &stmt, NULL);
+    sqlite3_stmt *man_pol_attr_stmt;
+    rc = sqlite3_prepare_v2(db, "INSERT INTO management_policy_attributes VALUES (?, ?, ?, ?, ?, ?, ?)", -1, &man_pol_attr_stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
         return false;
     }
 
     // Bind inputs to sql statement
-    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
+    if (sqlite3_bind_text(man_pol_attr_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
         return false;
     }
-    if (sqlite3_bind_double(stmt, 2, dedicated_GB) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
+    if (sqlite3_bind_double(man_pol_attr_stmt, 2, dedicated_GB) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
         return false;
     }
-    if (sqlite3_bind_double(stmt, 3, opportunistic_GB) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
+    if (sqlite3_bind_double(man_pol_attr_stmt, 3, opportunistic_GB) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
         return false;
     }
-    if (sqlite3_bind_int64(stmt, 4, max_num_objects) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
+    if (sqlite3_bind_int64(man_pol_attr_stmt, 4, max_num_objects) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
         return false;
     }
-    if (sqlite3_bind_int64(stmt, 5, creation_time) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
+    if (sqlite3_bind_int64(man_pol_attr_stmt, 5, creation_time) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
         return false;
     }
-    if (sqlite3_bind_int64(stmt, 6, expiration_time) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
+    if (sqlite3_bind_int64(man_pol_attr_stmt, 6, expiration_time) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
         return false;
     }
-    if (sqlite3_bind_int64(stmt, 7, deletion_time) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
+    if (sqlite3_bind_int64(man_pol_attr_stmt, 7, deletion_time) != SQLITE_OK) {
+        sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
         return false;
     }
 
-    rc = sqlite3_step(stmt);
+    rc = sqlite3_step(man_pol_attr_stmt);
     if (rc != SQLITE_DONE) {
         int err = sqlite3_extended_errcode(db);
-        sqlite3_finalize(stmt);
+        sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
         return false;
     }
 
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
-    sqlite3_finalize(stmt);
+    sqlite3_finalize(man_pol_attr_stmt);
 
     // Initialize all lot usage parameters to 0
-    rc = sqlite3_prepare_v2(db, "INSERT INTO lot_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", -1, &stmt, NULL);
+    sqlite3_stmt *init_stmt;
+    rc = sqlite3_prepare_v2(db, "INSERT INTO lot_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", -1, &init_stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_close(db);
         return false;
     }
 
     // Bind inputs to sql statement
-    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
-        sqlite3_finalize(stmt);
+    if (sqlite3_bind_text(init_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        sqlite3_finalize(init_stmt);
         sqlite3_close(db);
         return false;
     }
@@ -362,30 +621,30 @@ bool lotman::Lot::store_lot(std::string lot_name,
     std::array<int, 4> double_bind_arr{{2,3,6,7}};
     std::array<int, 4> int_bind_arr{{4,5,8,9}};
     for (const auto &index : double_bind_arr) {
-        if (sqlite3_bind_double(stmt, index, 0) != SQLITE_OK) {
-            sqlite3_finalize(stmt);
+        if (sqlite3_bind_double(init_stmt, index, 0) != SQLITE_OK) {
+            sqlite3_finalize(init_stmt);
             sqlite3_close(db);
             return false;
         }
     }
     for (const auto &index : int_bind_arr) {
-        if (sqlite3_bind_int64(stmt, index, 0) != SQLITE_OK) {
-            sqlite3_finalize(stmt);
+        if (sqlite3_bind_int64(init_stmt, index, 0) != SQLITE_OK) {
+            sqlite3_finalize(init_stmt);
             sqlite3_close(db);
             return false;
         }
     }
 
-    rc = sqlite3_step(stmt);
+    rc = sqlite3_step(init_stmt);
     if (rc != SQLITE_DONE) {
         int err = sqlite3_extended_errcode(db);
-        sqlite3_finalize(stmt);
+        sqlite3_finalize(init_stmt);
         sqlite3_close(db);
         return false;
     }
 
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
-    sqlite3_finalize(stmt);
+    sqlite3_finalize(init_stmt);
     sqlite3_close(db);
 
     return true;

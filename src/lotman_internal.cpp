@@ -17,6 +17,88 @@ using namespace lotman;
 /**
  * Functions specific to Lot class
 */
+
+bool lotman::Lot2::init_full(const json lot_JSON) {
+                
+    // try/catch here for error handling
+
+    try {
+        lot_name = lot_JSON["lot_name"];
+
+        owner = lot_JSON["owner"];
+        parents = lot_JSON["parents"]; 
+        paths = lot_JSON["paths"];
+        man_policy_attr.dedicated_GB = lot_JSON["management_policy_attrs"]["dedicated_GB"];
+        man_policy_attr.opportunistic_GB = lot_JSON["management_policy_attrs"]["opportunistic_GB"];
+        man_policy_attr.max_num_objects = lot_JSON["management_policy_attrs"]["max_num_objects"];
+        man_policy_attr.creation_time = lot_JSON["management_policy_attrs"]["creation_time"];
+        man_policy_attr.expiration_time = lot_JSON["management_policy_attrs"]["expiration_time"];
+        man_policy_attr.deletion_time = lot_JSON["management_policy_attrs"]["deletion_time"];
+        
+        usage.self_GB = 0;
+        usage.children_GB = 0;
+        usage.self_GB_being_written = 0;
+        usage.children_GB_being_written = 0;
+        usage.self_objects = 0;
+        usage.children_objects = 0;
+        usage.self_objects_being_written = 0;
+        usage.children_objects_being_written = 0;
+
+        full_lot = true;
+    }
+    catch(std::exception &exc) {
+        std::cerr << exc.what();
+        return false;
+    }
+    return true;
+}
+
+
+bool lotman::Lot2::store_lot() {
+        if (full_lot) {
+            return write_new();
+        }
+        return false;
+}
+
+bool lotman::Lot2::lot_exists(std::string lot_name) {
+
+    std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name = ?;";
+    std::map<std::string, std::vector<int>> lot_exists_str_map{{lot_name, {1}}};
+
+    return (lotman::Validator::SQL_get_matches(lot_exists_query, lot_exists_str_map).size()>0);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 bool lotman::Lot::lot_exists(std::string lot_name) {
     std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name = ?;";
     std::map<std::string, std::vector<int>> lot_exists_str_map{{lot_name, {1}}};
@@ -37,12 +119,13 @@ bool lotman::Lot::is_root(std::string lot_name) {
 }
 
 bool lotman::Lot::add_lot(std::string lot_name, 
-                          std::vector<std::string> owners, 
+                          std::string owner, 
                           std::vector<std::string> parents, 
                           std::vector<std::string> children, 
                           std::map<std::string, int> paths_map, 
                           std::map<std::string, int> management_policy_attrs_int_map,
-                          std::map<std::string, double> management_policy_attrs_double_map) {
+                          std::map<std::string, unsigned long long> management_policy_attrs_tmstmp_map,
+                          std::map<std::string, double> management_policy_attrs_dbl_map) {
 
     // TODO: Error handling
     // TODO: Check if LTBA is a root, and if yes, ensure it has a well-defined set of policies, OR decide to grab some stuff from default lot
@@ -93,7 +176,7 @@ bool lotman::Lot::add_lot(std::string lot_name,
     
     }
 
-    bool store_lot_status = store_lot(lot_name, owners, parents, paths_map, management_policy_attrs_int_map, management_policy_attrs_double_map);
+    bool store_lot_status = store_lot(lot_name, owner, parents, paths_map, management_policy_attrs_int_map, management_policy_attrs_tmstmp_map, management_policy_attrs_dbl_map);
 
     // If the lot is stored successfully, it's safe to start updating other lots to have correct info.
     if (store_lot_status) {
@@ -188,31 +271,28 @@ bool lotman::Lot::remove_lot(std::string lot_name,
 }
 
 bool lotman::Lot::update_lot_params(std::string lot_name, 
-                std::map<std::string, std::string> owners_map, 
-                std::map<std::string, std::string> parents_map, 
-                std::map<std::string, int> paths_map, 
-                std::map<std::string, int> management_policy_attrs_int_map, 
-                std::map<std::string, double> management_policy_attrs_double_map) {
+                                    std::string owner, 
+                                    std::map<std::string, std::string> parents_map, 
+                                    std::map<std::string, int> paths_map, 
+                                    std::map<std::string, int> management_policy_attrs_int_map, 
+                                    std::map<std::string, double> management_policy_attrs_double_map) {
     if (!lot_exists(lot_name)) {
         std::cout << "Lot does not exist so it cannot be updated" << std::endl;
         return false;
     }
 
     // For each change in each map, store the change.
-    std::string owners_update_dynamic_query = "UPDATE owners SET owner=? WHERE lot_name=? AND owner=?;";
-    for (auto & key : owners_map) {
-        std::map<std::string, std::vector<int>> owners_update_str_map{{key.second, {1}}, {lot_name, {2}}, {key.first, {3}}};
-        bool rv = lotman::Lot::store_modifications(owners_update_dynamic_query, owners_update_str_map);
-        if (!rv) {
-            std::cout << "call to lotman::Lot::store_modifications unsuccessful when updating an owner." << std::endl;
-            return false;
-        }
+    std::string owner_update_dynamic_query = "UPDATE owners SET owner=? WHERE lot_name=?;";
+    std::map<std::string, std::vector<int>> owner_update_str_map{{lot_name, {2}}, {owner, {1}}};
+    bool rv = lotman::Lot::store_modifications(owner_update_dynamic_query, owner_update_str_map);
+    if (!rv) {
+        std::cout << "call to lotman::Lot::store_modifications unsuccessful when updating an owner." << std::endl;
+        return false;
     }
 
     std::string parents_update_dynamic_query = "UPDATE parents SET parent=? WHERE lot_name=? AND parent=?";
     for (auto & key : parents_map) {
         std::map<std::string, std::vector<int>> parents_update_str_map;
-        bool rv;
         if (key.first == lot_name) {
             std::map<std::string, std::vector<int>> parents_update_str_map{{key.second, {1}}, {lot_name, {2,3}}};
             rv = lotman::Lot::store_modifications(parents_update_dynamic_query, parents_update_str_map);
@@ -231,7 +311,6 @@ bool lotman::Lot::update_lot_params(std::string lot_name,
     for (auto & key : paths_map) {
         std::map<std::string, std::vector<int>> paths_update_str_map;
         std::map<int, std::vector<int>> paths_update_int_map{{key.second, {1}}};
-        bool rv;
         if (key.first == lot_name) {
             std::map<std::string, std::vector<int>> paths_update_str_map{{lot_name, {2,3}}};
             rv = lotman::Lot::store_modifications(paths_update_dynamic_query, paths_update_str_map, paths_update_int_map);
@@ -254,7 +333,7 @@ bool lotman::Lot::update_lot_params(std::string lot_name,
         std::array<std::string, 4> allowed_keys{{"max_num_objects", "creation_time", "expiration_time", "deletion_time"}};
         if (std::find(allowed_keys.begin(), allowed_keys.end(), key.first) != allowed_keys.end()) {
             std::string management_policy_attrs_dynamic_query = management_policy_attrs_dynamic_query_first_half + key.first + management_policy_attrs_dynamic_query_second_half;
-            bool rv = lotman::Lot::store_modifications(management_policy_attrs_dynamic_query, management_policy_attrs_update_str_map, management_policy_attrs_update_int_map);
+            rv = lotman::Lot::store_modifications(management_policy_attrs_dynamic_query, management_policy_attrs_update_str_map, management_policy_attrs_update_int_map);
             if (!rv) {
                 std::cout << "Call to lotman::Lot::store_modifications unsuccessful when updating management policy attribute" << std::endl;
                 return false;
@@ -273,7 +352,7 @@ bool lotman::Lot::update_lot_params(std::string lot_name,
         if (std::find(allowed_keys.begin(), allowed_keys.end(), key.first) != allowed_keys.end()) {
             std::string management_policy_attrs_dynamic_query = management_policy_attrs_dynamic_query_first_half + key.first + management_policy_attrs_dynamic_query_second_half;
             
-            bool rv = lotman::Lot::store_modifications(management_policy_attrs_dynamic_query, management_policy_attrs_update_str_map, std::map<int, std::vector<int>>(), management_policy_attrs_update_double_map);
+            rv = lotman::Lot::store_modifications(management_policy_attrs_dynamic_query, management_policy_attrs_update_str_map, std::map<int, std::vector<int>>(), management_policy_attrs_update_double_map);
             if (!rv) {
                 std::cout << "Call to lotman::Lot::store_modifications unsuccessful when updating management policy attribute" << std::endl;
                 return false;
