@@ -4,27 +4,29 @@
 #include <iostream>
 #include <typeinfo>
 #include <picojson.h>
+#include <cstring>
 
 namespace {
 
 
     TEST(LotManTest, DefaultLotTests) {
-        char *err_msg;
+        char *err1;
         const char *context;
         const char *lot1 = "{\"lot_name\": \"lot1\", \"owner\": \"Justin\",  \"parents\": [\"lot1\"],\"paths\": [{\"path\":\"/a/path\", \"recursive\":false},{\"path\":\"/foo/bar\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
         const char *default_lot = "{\"lot_name\": \"default\", \"owner\": \"Brian B\",  \"parents\": [\"default\"],\"paths\": [{\"path\":\"/default/paths\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
 
-        std::cout << "First check" << std::endl;
-        auto rv = lotman_add_lot(lot1, context, &err_msg);
-        ASSERT_FALSE(rv == 0);
+        std::cout << "first" << std::endl;
+        auto rv = lotman_add_lot(lot1, context, &err1);
+        ASSERT_FALSE(!(rv != 0 && err1 != nullptr)) << err1;
 
-        std::cout << "Second check" << std::endl;
-        rv = lotman_add_lot(default_lot, context, &err_msg);
-        ASSERT_TRUE(rv == 0);
+        std::cout << "second" << std::endl;
+        char *err2;
+        rv = lotman_add_lot(default_lot, context, &err2);
+        ASSERT_TRUE(rv == 0 && err2 == nullptr) << err2;
 
-        std::cout << "Third check" << std::endl;
-        rv = lotman_remove_lot("default", true, true, true, context, &err_msg);
-        ASSERT_FALSE(rv==0);
+        std::cout << "third" << std::endl;
+        rv = lotman_remove_lot("default", true, true, true, context, &err2);
+        ASSERT_FALSE(rv == 0 && err2 == nullptr) << err2;
     }
 
     // TEST(LotManTest, AddRemoveSublot) {

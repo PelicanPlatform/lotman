@@ -18,7 +18,7 @@ using namespace lotman;
  * Functions specific to Lot class
 */
 
-bool lotman::Lot2::init_full(const json lot_JSON) {
+std::pair<bool, std::string> lotman::Lot2::init_full(const json lot_JSON) {
                 
     // try/catch here for error handling
 
@@ -45,31 +45,49 @@ bool lotman::Lot2::init_full(const json lot_JSON) {
         usage.children_objects_being_written = 0;
 
         full_lot = true;
+        return std::make_pair(true, "");
     }
     catch(std::exception &exc) {
-        std::cerr << exc.what();
-        return false;
+        //std::cerr << exc.what();
+        return std::make_pair(false, exc.what());
     }
-    return true;
 }
 
 
-bool lotman::Lot2::store_lot() {
-        if (full_lot) {
-            return write_new();
+std::pair<bool, std::string> lotman::Lot2::store_lot() {
+        if (!full_lot) {
+            return std::make_pair(false, "Lot was not fully initialized");
         }
-        return false;
+
+        try {
+            auto rp = write_new();
+            return std::make_pair(rp.first, rp.second);
+
+        }
+        catch (std::exception &exc) {
+            return std::make_pair(false, exc.what());
+        }
+        
 }
 
-bool lotman::Lot2::lot_exists(std::string lot_name) {
+std::pair<bool, std::string> lotman::Lot2::lot_exists(std::string lot_name) {
 
     std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name = ?;";
     std::map<std::string, std::vector<int>> lot_exists_str_map{{lot_name, {1}}};
 
-    return (lotman::Validator::SQL_get_matches(lot_exists_query, lot_exists_str_map).size()>0);
+    try {
+        return std::make_pair(lotman::Validator::SQL_get_matches(lot_exists_query, lot_exists_str_map).size()>0, "");
+
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
 }
 
+bool lotman::Lot2::destroy_lot() {
+    return false;
 
+}
 
 
 

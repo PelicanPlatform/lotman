@@ -58,12 +58,14 @@ class Lot2 {
         bool full_lot = false;
 
 
-        bool init_full(const json lot_JSON);
-        static bool lot_exists(std::string lot_name);
-        bool store_lot();
+        std::pair<bool, std::string> init_full(const json lot_JSON);
+        static std::pair<bool, std::string> lot_exists(std::string lot_name);
+        std::pair<bool, std::string> store_lot();
+        bool destroy_lot();
 
     private:
-        bool write_new();
+        std::pair<bool, std::string> write_new();
+        bool delete_lot();
 
 };
 

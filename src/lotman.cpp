@@ -2,7 +2,7 @@
 #include <iostream> //DELETE
 #include <string.h>
 #include <picojson.h>
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 
 #include "lotman.h"
 #include "lotman_internal.h"
@@ -25,49 +25,70 @@ int lotman_add_lot(const char *lotman_JSON_str,
     // TODO: Check for context and figure out what to do with it
     // TODO: Create JSON schema and verify JSON input before calling functions that rely on specific structures.
 
-    json lot_JSON_obj = json::parse(lotman_JSON_str);
+    try {
+        json lot_JSON_obj = json::parse(lotman_JSON_str);
 
-    // Data checks
-    if (!lotman::Lot2::lot_exists("default") && lot_JSON_obj["lot_name"] != "default") {
+        // Data checks
+        auto rp = lotman::Lot2::lot_exists("default");
+        if (!rp.first && lot_JSON_obj["lot_name"] != "default") {
+            if (err_msg) {
+                if (rp.second.empty()) { // function worked, but lot does not exist
+                    *err_msg = strdup("The default lot named \"default\" must be created first.");
+                }
+                else {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }            
+            }
+            return -1;
+        }
+
+        rp = lotman::Lot2::lot_exists(lot_JSON_obj["lot_name"]);
+        if (rp.first) {
+            if (err_msg) {
+                if (rp.second.empty()) { // function worked, but lot does not exist
+                    *err_msg = strdup("The lot already exists and cannot be recreated. Maybe you meant to modify it?");
+                }
+                else {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }            
+            return -1;
+            }
+        }
+
+        lotman::Lot2 lot;
+        rp = lot.init_full(lot_JSON_obj);
+        if (!rp.first){
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failed to initialize the lot from JSON: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+
+        rp = lot.store_lot();
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failed to store lot: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        return 0;
+    }
+    catch (std::exception &exc) {
         if (err_msg) {
-            std::cout << "Here1" << std::endl;
-            *err_msg = strdup("The default lot named \"default\" must be created first.");
+            *err_msg = strdup(exc.what());
         }
         return -1;
     }
-    if (lotman::Lot2::lot_exists(lot_JSON_obj["lot_name"])) {
-        if (err_msg) {
-            std::cout << "HERE2" << std::endl;
-            *err_msg = strdup("The lot already exists and so it cannot be added.");
-        }
-        return -1;
-    }
-
-    lotman::Lot2 lot;
-
-    if (!lot.init_full(lot_JSON_obj)){
-        if (err_msg) {
-            std::cout << "Here3" << std::endl;
-            *err_msg = strdup("Failed initialize the lot from JSON");
-        }
-        return -1;
-    }
-
-    if (!lot.store_lot()) {
-        if (err_msg) {
-            std::cout << "here4" << std::endl;
-            *err_msg = strdup("Failed to write lot to db.");
-        }
-        return -1;
-
-    }
-
-    return 0;
-    //return lot.store_lot();
-
-
-
-
 
     // picojson::value lotman_JSON;
     // std::string err = picojson::parse(lotman_JSON, lotman_JSON_str);
@@ -269,7 +290,9 @@ int lotman_remove_lot(const char *lot_name,
         }
     }
     catch(std::exception &exc) {
-        if (err_msg) {*err_msg = strdup(exc.what());}
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
         return -1;
     }
 
@@ -452,11 +475,28 @@ int lotman_lot_exists(const char *lot_name,
         return -1;
     }
 
-
-    return lotman::Lot2::lot_exists(lot_name);
-    
-    //return lotman::Lot2::lot_exists(lot_name);
+    try {
+        auto rp = lotman::Lot2::lot_exists(lot_name);
+        if (rp.second.empty()) { //no error message indicates success --> will change when inner function can handle error propagation
+            return rp.first;
+        }
+        else {
+            std::string int_err = rp.second;
+            std::string ext_err = "Call to lotman::Lot2::lot_exists failed: ";
+            if (err_msg) {
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
 }
+    
 
 int lotman_get_owners(const char *lot_name, 
                       const bool recursive,
