@@ -19,9 +19,6 @@ using namespace lotman;
 */
 
 std::pair<bool, std::string> lotman::Lot2::init_full(const json lot_JSON) {
-                
-    // try/catch here for error handling
-
     try {
         lot_name = lot_JSON["lot_name"];
 
@@ -53,6 +50,33 @@ std::pair<bool, std::string> lotman::Lot2::init_full(const json lot_JSON) {
     }
 }
 
+std::pair<bool, std::string> lotman::Lot2::init_name(const std::string name) {
+    try {
+        lot_name = name;
+        has_name = true;
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+}
+
+std::pair<bool, std::string> lotman::Lot2::init_reassignment_policy(const bool assign_LTBR_parent_as_parent_to_orphans, 
+                                                                const bool assign_LTBR_parent_as_parent_to_non_orphans,
+                                                                const bool assign_policy_to_children) {
+    try {
+        reassignment_policy.assign_LTBR_parent_as_parent_to_orphans = assign_LTBR_parent_as_parent_to_orphans;
+        reassignment_policy.assign_LTBR_parent_as_parent_to_non_orphans = assign_LTBR_parent_as_parent_to_non_orphans;
+        reassignment_policy.assign_policy_to_children = assign_policy_to_children;
+        has_reassignment_policy = true;
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+
+
+}
 
 std::pair<bool, std::string> lotman::Lot2::store_lot() {
         if (!full_lot) {
@@ -67,7 +91,6 @@ std::pair<bool, std::string> lotman::Lot2::store_lot() {
         catch (std::exception &exc) {
             return std::make_pair(false, exc.what());
         }
-        
 }
 
 std::pair<bool, std::string> lotman::Lot2::lot_exists(std::string lot_name) {
@@ -84,9 +107,16 @@ std::pair<bool, std::string> lotman::Lot2::lot_exists(std::string lot_name) {
     }
 }
 
-bool lotman::Lot2::destroy_lot() {
-    return false;
-
+std::pair<bool, std::string> lotman::Lot2::destroy_lot() {
+    if (!has_reassignment_policy) {
+        return std::make_pair(false, "The lot has no defined reassignment policy.");
+    }
+    try {
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
 }
 
 

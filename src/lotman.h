@@ -32,7 +32,7 @@ int lotman_add_lot(const char *lotman_JSON_str, const char *lotman_context, char
  *         NOTE: If LTBR is a root and this option is true, the function should fail with an indication that the child could not be reassigned because LTBR has no parents.
  * OPTION assign_policy_to_children: If true, the policy attributes of all of LTBR's children will be overwritten with LTBR's policy attributes.
 */
-int lotman_remove_lot(const char *lot_name, bool assign_LTBR_parent_as_parent_to_orphans, bool assign_LTBR_parent_as_parent_to_non_orphans, bool assign_policy_to_children, const char *lotman_context, char **err_msg);
+int lotman_remove_lot(const char *lot_name, bool assign_LTBR_parent_as_parent_to_orphans, bool assign_LTBR_parent_as_parent_to_non_orphans, bool assign_policy_to_children, const bool override_policy, const char *lotman_context, char **err_msg);
 int lotman_update_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
 int lotman_add_to_lot(const char *lot_name, const char *lotman_JSON_str, const char *lotman_context, char **err_msg);
 int lotman_lot_exists(const char *lot_name, const char *lotman_context, char **err_msg);

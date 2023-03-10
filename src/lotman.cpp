@@ -47,7 +47,7 @@ int lotman_add_lot(const char *lotman_JSON_str,
         rp = lotman::Lot2::lot_exists(lot_JSON_obj["lot_name"]);
         if (rp.first) {
             if (err_msg) {
-                if (rp.second.empty()) { // function worked, but lot does not exist
+                if (rp.second.empty()) { // function worked, but lot already exists
                     *err_msg = strdup("The lot already exists and cannot be recreated. Maybe you meant to modify it?");
                 }
                 else {
@@ -270,12 +270,120 @@ int lotman_add_lot(const char *lotman_JSON_str,
 }
 
 int lotman_remove_lot(const char *lot_name, 
-                      bool assign_LTBR_parent_as_parent_to_orphans, 
-                      bool assign_LTBR_parent_as_parent_to_non_orphans, 
-                      bool assign_policy_to_children, 
+                      const bool assign_LTBR_parent_as_parent_to_orphans, 
+                      const bool assign_LTBR_parent_as_parent_to_non_orphans, 
+                      const bool assign_policy_to_children,
+                      const bool override_policy,
                       const char *lotman_context, 
                       char **err_msg) {
     // TODO: Check for context and figure out what to do with it
+
+    // try {
+        
+    //     auto rp = lotman::Lot2::lot_exists(lot_name);
+    //     if (!rp.first) {
+    //         if (err_msg) {
+    //             if (rp.second.empty()) { // function worked, but lot does not exist
+    //                 *err_msg = strdup("That was easy! The lot does not exist, so it doesn't have to be removed.");
+    //             }
+    //             else {
+    //                 std::string int_err = rp.second;
+    //                 std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+    //                 *err_msg = strdup((ext_err + int_err).c_str());
+    //             }            
+    //         return -1;
+    //         }
+    //     }
+
+    //     lotman::Lot2 lot;
+    //     auto rp = lot.init_name(lot_name);
+    //     if (!rp.first) {
+    //         if (err_msg) {
+    //             std::string int_err = rp.second;
+    //             std::string ext_err = "Function call to init_name failed: ";
+    //             *err_msg = strdup((ext_err + int_err).c_str());
+    //         }
+    //         return -1;
+    //     }
+
+
+    //     // Use this block when you've created reassignment policies in the database
+    //     // if (override_policy) { // Don't bother to load the assigned policy, just initialize
+    //     //     rp = lot.init_reassignment_policy(assign_LTBR_parent_as_parent_to_orphans, assign_LTBR_parent_as_parent_to_non_orphans, assign_policy_to_children);
+    //     //     if (!rp.first) {
+    //     //         if (err_msg) {
+    //     //             std::string int_err = rp.second;
+    //     //             std::string ext_err = "Function call to init_reassignment_policy failed: ";
+    //     //             *err_msg = strdup((ext_err + int_err).c_str());
+    //     //         }
+    //     //     }
+    //     // }
+    //     // else {
+    //     //     rp = lot.load_reassignment_policy();
+    //     //     if (!rp.first) {
+    //     //         if (rp.second.empty()) { // function worked, but lot has no stored reassignment policy
+    //     //             rp = lot.init_reassignment_policy(assign_LTBR_parent_as_parent_to_orphans, assign_LTBR_parent_as_parent_to_non_orphans, assign_policy_to_children);
+    //     //             if (!rp.first) {
+    //     //                 if (err_msg) {
+    //     //                     std::string int_err = rp.second;
+    //     //                     std::string ext_err = "Function call to init_reassignment_policy failed: ";
+    //     //                     *err_msg = strdup((ext_err + int_err).c_str());
+    //     //                 }
+    //     //             }
+    //     //         }
+    //     //         else { // function did not work
+    //     //             if (err_msg) {
+    //     //                 std::string int_err = rp.second;
+    //     //                 std::string ext_err = "Failed to load reassignment policy: ";
+    //     //                 *err_msg = strdup((ext_err + int_err).c_str());
+    //     //             }
+    //     //             return -1;
+    //     //         }
+    //     //     }
+    //     // }
+
+    //     rp = lot.init_reassignment_policy(assign_LTBR_parent_as_parent_to_orphans, assign_LTBR_parent_as_parent_to_non_orphans, assign_policy_to_children);
+    //     if (!rp.first) {
+    //         if (err_msg) {
+    //             std::string int_err = rp.second;
+    //             std::string ext_err = "Function call to init_reassignment_policy failed: ";
+    //             *err_msg = strdup((ext_err + int_err).c_str());
+    //         }
+    //         return -1;
+    //     }
+
+    //     rp = lot.destroy_lot();
+    //     if (!rp.first) {
+    //         if (err_msg) {
+    //             std::string int_err = rp.second;
+    //             std::string ext_err = "Failed to remove lot from database: ";
+    //             *err_msg = strdup((ext_err + int_err).c_str());
+    //         }
+    //         return -1;
+    //     }
+    //     return 0;
+    // }
+    // catch (std::exception &exc) {
+    //     if (err_msg) {
+    //         *err_msg = strdup(exc.what());
+    //     }
+    //     return -1;
+    // }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     if (!lot_name) {
         if (err_msg) {*err_msg = strdup("Name for the lot to be removed must not be nullpointer.");}

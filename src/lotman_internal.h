@@ -55,17 +55,31 @@ class Lot2 {
             int64_t children_objects_being_written;
         } usage;
 
+        struct {
+            bool assign_LTBR_parent_as_parent_to_orphans;
+            bool assign_LTBR_parent_as_parent_to_non_orphans;
+            bool assign_policy_to_children;
+        } reassignment_policy;
+
+
         bool full_lot = false;
+        bool has_name = false;
+        bool has_reassignment_policy = false;
 
 
         std::pair<bool, std::string> init_full(const json lot_JSON);
+        std::pair<bool, std::string> init_name(const std::string name);
+        std::pair<bool, std::string> init_reassignment_policy(const bool assign_LTBR_parent_as_parent_to_orphans, 
+                                                          const bool assign_LTBR_parent_as_parent_to_non_orphans,
+                                                          const bool assign_policy_to_children);
         static std::pair<bool, std::string> lot_exists(std::string lot_name);
         std::pair<bool, std::string> store_lot();
-        bool destroy_lot();
+        std::pair<bool, std::string> destroy_lot();
+
 
     private:
         std::pair<bool, std::string> write_new();
-        bool delete_lot();
+        std::pair<bool, std::string> delete_lot();
 
 };
 

@@ -25,7 +25,7 @@ namespace {
         ASSERT_TRUE(rv == 0 && err2 == nullptr) << err2;
 
         std::cout << "third" << std::endl;
-        rv = lotman_remove_lot("default", true, true, true, context, &err2);
+        rv = lotman_remove_lot("default", true, true, true, false, context, &err2);
         ASSERT_FALSE(rv == 0 && err2 == nullptr) << err2;
     }
 
