@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include <string>
-#include <picojson.h>
 #include <vector>
-#include "json.hpp"
+#include <nlohmann/json.hpp>
 
 // TODO: Go through and prefer overloading functions vs distinguishing between int and double inputs
 
@@ -27,12 +26,25 @@ class Validator;
 using json = nlohmann::json;
 class Lot2 {
     public:
+        // Non-object values used for lot initialization
         std::string lot_name;
         std::string owner;
         std::vector<std::string> parents;
-        //std::string parents;
+        std::vector<std::string> children;
         std::vector<json> paths;
-        
+
+        // Things that belong to the lot when including parent/child relationships
+        std::string self_owner;
+        std::vector<Lot2> self_parents;
+        std::vector<Lot2> self_children;
+
+
+        // Things that belong to the lot when including parent/child relationships
+        std::vector<std::string> recursive_owners;
+        std::vector<Lot2> recursive_parents;
+        std::vector<Lot2> recursive_children;
+
+
         // management policy attributes
         struct {
             double dedicated_GB;
@@ -61,25 +73,67 @@ class Lot2 {
             bool assign_policy_to_children;
         } reassignment_policy;
 
-
         bool full_lot = false;
         bool has_name = false;
         bool has_reassignment_policy = false;
-
-
-        std::pair<bool, std::string> init_full(const json lot_JSON);
-        std::pair<bool, std::string> init_name(const std::string name);
+        bool is_root;
+        
+        std::pair<bool, std::string> init_full(json lot_JSON); // TODO: Turn this into a constructor to simplify code
+        std::pair<bool, std::string> init_name(const std::string name); // TODO: Turn this into a constructor to simplify code
         std::pair<bool, std::string> init_reassignment_policy(const bool assign_LTBR_parent_as_parent_to_orphans, 
-                                                          const bool assign_LTBR_parent_as_parent_to_non_orphans,
-                                                          const bool assign_policy_to_children);
+                                                              const bool assign_LTBR_parent_as_parent_to_non_orphans,
+                                                              const bool assign_policy_to_children);
+        std::pair<bool, std::string> init_self_usage(const json usage_JSON);
+
         static std::pair<bool, std::string> lot_exists(std::string lot_name);
+        std::pair<bool, std::string> check_if_root();
         std::pair<bool, std::string> store_lot();
         std::pair<bool, std::string> destroy_lot();
+
+        std::pair<std::vector<Lot2>, std::string> get_children(const bool recursive = false,
+                                                               const bool get_self = false);
+                                    
+        std::pair<std::vector<Lot2>, std::string> get_parents(const bool recursive = false,
+                                                              const bool get_self = false);
+
+        std::pair<std::vector<std::string>, std::string> get_owners(const bool recursive = false);
+
+        std::pair<json, std::string> get_restricting_attribute(const std::string key,
+                                                               const bool recursive);
+
+        std::pair<json, std::string> get_lot_dirs(const bool recursive);
+
+        std::pair<json, std::string> get_lot_usage(const std::string key,
+                                                   const bool recursive);
+
+        std::pair<bool, std::string> add_parents(std::vector<Lot2> parents);
+        std::pair<bool, std::string> add_paths(std::vector<json> paths);
+
+
+        std::pair<bool, std::string> update_owner(std::string update_val);
+        std::pair<bool, std::string> update_parents(std::map<std::string, std::string> update_map);
+        std::pair<bool, std::string> update_paths(std::map<std::string, json> update_map);
+        std::pair<bool, std::string> update_man_policy_attrs(std::string update_key, double update_val);
+        std::pair<bool, std::string> update_self_usage(const std::string key, const double value);
+        std::pair<bool, std::string> update_parent_usage(Lot2 parent,
+                                                         std::string update_stmt, 
+                                                         std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
+                                                         std::map<int, std::vector<int>> update_int_map =std::map<int, std::vector<int>>(),
+                                                         std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
+
+
+
 
 
     private:
         std::pair<bool, std::string> write_new();
-        std::pair<bool, std::string> delete_lot();
+        std::pair<bool, std::string> delete_lot_from_db();
+        std::pair<bool, std::string> store_new_paths(std::vector<json> new_paths);
+        std::pair<bool, std::string> store_new_parents(std::vector<Lot2> new_parents);
+        std::pair<bool, std::string> store_updates(std::string update_query, 
+                                                   std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
+                                                   std::map<int, std::vector<int>> update_int_map =std::map<int, std::vector<int>>(),
+                                                   std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
 
 };
 
@@ -214,8 +268,8 @@ class Validator {
     private:
         static std::vector<std::string> SQL_get_matches(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
         static std::vector<std::vector<std::string>> SQL_get_matches_multi_col(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
-
+        static std::pair<std::vector<std::string>, std::string> SQL_get_matches2(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
+        static std::pair<std::vector<std::vector<std::string>>, std::string> SQL_get_matches_multi_col2(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
 };
-
 
 } // namespace lotman

@@ -1,13 +1,12 @@
 #include <algorithm>
 #include <stdio.h>
 #include <iostream>
-#include <picojson.h>
 #include <sqlite3.h>
-//#include <string>
-//#include <vector>
+#include <nlohmann/json.hpp>
 
 #include "lotman_internal.h"
 
+using json = nlohmann::json;
 using namespace lotman;
 
 // TODO: Go through and make things const where they should be declared as such
@@ -18,12 +17,14 @@ using namespace lotman;
  * Functions specific to Lot class
 */
 
-std::pair<bool, std::string> lotman::Lot2::init_full(const json lot_JSON) {
-    try {
-        lot_name = lot_JSON["lot_name"];
+std::pair<bool, std::string> lotman::Lot2::init_full(json lot_JSON) {
+    try {        lot_name = lot_JSON["lot_name"];
 
         owner = lot_JSON["owner"];
         parents = lot_JSON["parents"]; 
+        if (!lot_JSON["children"].is_null()) {
+            children = lot_JSON["children"];
+        }
         paths = lot_JSON["paths"];
         man_policy_attr.dedicated_GB = lot_JSON["management_policy_attrs"]["dedicated_GB"];
         man_policy_attr.opportunistic_GB = lot_JSON["management_policy_attrs"]["opportunistic_GB"];
@@ -62,8 +63,8 @@ std::pair<bool, std::string> lotman::Lot2::init_name(const std::string name) {
 }
 
 std::pair<bool, std::string> lotman::Lot2::init_reassignment_policy(const bool assign_LTBR_parent_as_parent_to_orphans, 
-                                                                const bool assign_LTBR_parent_as_parent_to_non_orphans,
-                                                                const bool assign_policy_to_children) {
+                                                                    const bool assign_LTBR_parent_as_parent_to_non_orphans,
+                                                                    const bool assign_policy_to_children) {
     try {
         reassignment_policy.assign_LTBR_parent_as_parent_to_orphans = assign_LTBR_parent_as_parent_to_orphans;
         reassignment_policy.assign_LTBR_parent_as_parent_to_non_orphans = assign_LTBR_parent_as_parent_to_non_orphans;
@@ -78,14 +79,86 @@ std::pair<bool, std::string> lotman::Lot2::init_reassignment_policy(const bool a
 
 }
 
+// std::pair<bool, std::string> lotman::Lot2::init_self_usage(const json usage_JSON) {
+//     try {
+//         usage.self_GB = usage_JSON["self_GB"];
+//         usage.self_GB_being_written = usage_JSON["self_GB_being_written"];
+//         usage.self_objects = usage_JSON["self_objects"];
+//         usage.self_objects_being_written = usage_JSON["self_objects_being_written"];
+//         return std::make_pair(true, "");
+//     }
+//     catch(std::exception &exc) {
+//         //std::cerr << exc.what();
+//         return std::make_pair(false, exc.what());
+//     }
+// }
+
 std::pair<bool, std::string> lotman::Lot2::store_lot() {
+        // TODO: Perform cycle check
+        
         if (!full_lot) {
             return std::make_pair(false, "Lot was not fully initialized");
         }
 
         try {
-            auto rp = write_new();
-            return std::make_pair(rp.first, rp.second);
+            // Check that any specified parents already exist, unless the lot has itself as parent
+            for (auto & parent : parents) {
+                if (parent != lot_name && !lot_exists(parent).first) {
+                    return std::make_pair(false, "A parent specified for the lot to be added does not exist in the database.");
+                }
+            }
+
+            // Check that any specified children already exist
+            if (children.size()>0) {
+                for (auto & child : children) {
+                    if (!lot_exists(child).first) {
+                        return std::make_pair(false, "A child specified for the lot to be added does not exist in the database");
+                    }
+                }
+            }
+
+            // Check that the added lot won't introduce any cycles
+            bool self_parent; // When checking for cycles, we only care about lots who specify a parent other than themselves
+            auto self_parent_iter = std::find(parents.begin(), parents.end(), lot_name);  
+   
+
+
+            self_parent = (self_parent_iter != parents.end());
+            if (!children.empty() &&  ((parents.size()==1 && !self_parent) || (parents.size()>1))) { // If there are children and a non-self parent
+                bool cycle_exists = lotman::Validator::cycle_check(lot_name, parents, children);
+                if (cycle_exists) {
+                    return std::make_pair(false, "The lot cannot be added because the combination of parents/children would introduce a dependency cycle in the data structure."); // Return false, don't do anything with the lot
+                }
+            
+            }
+    
+            // Store the lot, begin updating other lots after confirming the lot has been successfully stored
+            auto rp = this->write_new();
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure to store new lot: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+
+            bool parent_updated = true;
+            for (auto & parents_iter : parents) {
+                for (auto & children_iter : children) {
+                    if (lotman::Validator::insertion_check(lot_name, parents_iter, children_iter)) {
+                        // Update child to have lot_name as a parent instead of parents_iter. Later, save LTBA with all its specified parents.
+                        Lot2 child;
+                        child.init_name(children_iter);
+                        std::map<std::string, std::string> parent_update_map{{parents_iter, lot_name}};
+                        rp = child.update_parents(parent_update_map);
+                        parent_updated = rp.first;
+                        if (!parent_updated) {
+                            std::string int_err = rp.second;
+                            std::string ext_err = "Failure on call to child.update_parents: ";
+                            return std::make_pair(false, ext_err + int_err);
+                        }
+                    }
+                }
+            }
+        return std::make_pair(true, "");
 
         }
         catch (std::exception &exc) {
@@ -107,11 +180,975 @@ std::pair<bool, std::string> lotman::Lot2::lot_exists(std::string lot_name) {
     }
 }
 
+std::pair<bool, std::string> lotman::Lot2::check_if_root() {
+    try {
+        std::string is_root_query = "SELECT parent FROM parents WHERE lot_name = ?;"; 
+        std::map<std::string, std::vector<int>> is_root_query_str_map{{lot_name, {1}}};
+
+        auto rp = lotman::Validator::SQL_get_matches2(is_root_query, is_root_query_str_map);
+        if (!rp.second.empty()) {  // There is an error message
+            std::string int_err = rp.second;
+            std::string ext_err = "Function call to SQL_get_matches2 failed: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+
+        std::vector<std::string> parent_names_vec = rp.first;
+        if (parent_names_vec.size()==1 && parent_names_vec[0]==lot_name) {
+            // lot_name has only itself as a parent, indicating root
+            is_root = true;
+            return std::make_pair(true, "");
+        }
+        else {
+            is_root = false;
+            return std::make_pair(false, "");
+        }
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+}
+
 std::pair<bool, std::string> lotman::Lot2::destroy_lot() {
+
+    /*
+    FUNCTION FLOW
+    Prechecks:
+    * Check for reassignment policy. Lots MUST have a reassignment policy before deletion
+    * Check if lot-to-be-removed (LTBR) is the default lot. The default lot MUST NOT be deleted while other lots exist. LotMan provides no method for deleting the default lot.
+    * Check that LTBR actually exists in the database
+    
+    Meat:
+    * Get the LTBR's immediate children, who need to be reassigned
+    * Handle children according to policy
+    * Delete LTBR
+    */
+
     if (!has_reassignment_policy) {
         return std::make_pair(false, "The lot has no defined reassignment policy.");
     }
+    if (lot_name == "default") {
+        return std::make_pair(false, "The default lot cannot be deleted.");
+    }
     try {
+        auto rp_bool_str = lot_exists(lot_name);
+        if (!rp_bool_str.first) {
+            return std::make_pair(false, "The lot does not exist in the database, so it cannot be removed.");
+        }
+
+        // Prechecks complete, get the children for LTBR
+        auto rp_lotvec_str = this->get_children();
+        if (!rp_lotvec_str.second.empty()) { // There is an error message
+            std::string int_err = rp_lotvec_str.second;
+            std::string ext_err = "Failed to get lot children: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+
+        //std::vector<Lot2> children = rp_lotvec_str.first;
+        // If there are no children, the lot can be deleted without issue
+        if (self_children.empty()) { 
+            rp_bool_str = this->delete_lot_from_db();
+            if (!rp_bool_str.first) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failed to delete the lot from the database: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+            return std::make_pair(true, "");
+        }
+
+        // Reaching this point means there are children --> Reassign them
+
+        for (auto &child : self_children) {
+            if (lotman::Validator::will_be_orphaned(lot_name, child.lot_name)) { // Indicates whether LTBR is the only parent to child
+                if (reassignment_policy.assign_LTBR_parent_as_parent_to_orphans) {
+                    rp_bool_str = this->check_if_root();
+                    if (!rp_bool_str.second.empty()) {
+                        std::string int_err = rp_bool_str.second;
+                        std::string ext_err = "Function call to lotman::Lot2::check_if_root failed: ";
+                        return std::make_pair(false, ext_err + int_err);
+                    }
+                    if (is_root) {
+                        return std::make_pair(false, "The lot being removed is a root, and has no parents to assign to its children.");
+                    }
+
+                    // Since lots have only one explicit owner, we cannot reassign ownership.
+                    
+                    // Generate parents of current lot for assignment to children -- only need immediate parents
+                    this->get_parents();
+                    // Now assign parents of LTBR to orphan children of LTBR
+                    rp_bool_str = child.add_parents(self_parents);
+                    if (!rp_bool_str.first) {
+                        std::string int_err = rp_bool_str.second;
+                        std::string ext_err = "Failure on call to lotman::Lot2::add_parents for child lot: ";
+                        return std::make_pair(false, ext_err + int_err);
+                    }
+                }
+                else {
+                    return std::make_pair(false, "The operation cannot be completed as requested because deleting the lot would create an orphan that requires explicit assignment to the default lot. Set assign_LTBR_parent_as_parent_to_orphans=true.");
+                }
+            }
+            if (reassignment_policy.assign_LTBR_parent_as_parent_to_non_orphans) {
+                rp_bool_str = this->check_if_root();
+                if (!rp_bool_str.second.empty()) {
+                    std::string int_err = rp_bool_str.second;
+                    std::string ext_err = "Function call to lotman::Lot2::check_if_root failed: ";
+                    return std::make_pair(false, ext_err + int_err);
+                }
+                if (is_root) {
+                    return std::make_pair(false, "The lot being removed is a root, and has no parents to assign to its children.");
+                }
+                this->get_parents();
+                // Now assign parents of LTBR to non-orphan children of LTBR
+                rp_bool_str = child.add_parents(self_parents);
+                if (!rp_bool_str.first) {
+                    std::string int_err = rp_bool_str.second;
+                    std::string ext_err = "Function call to lotman::Lot2::add_parents for child lot failed: ";
+                    return std::make_pair(false, ext_err + int_err);
+                }
+            }
+        }
+        rp_bool_str = delete_lot_from_db();
+        if (!rp_bool_str.first) {
+            std::string int_err = rp_bool_str.second;
+            std::string ext_err = "Function call to lotman::Lot2::delete_lot_from_db failed: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+}
+
+std::pair<std::vector<Lot2>, std::string> lotman::Lot2::get_parents(const bool recursive, const bool get_self) {
+   try {
+        std::vector<Lot2> parents;
+        std::vector<std::string> parent_names_vec;
+        std::string parents_query;
+        std::map<std::string, std::vector<int>> parents_query_str_map;
+        if (get_self) {
+            parents_query = "SELECT parent FROM parents WHERE lot_name = ?;"; 
+            parents_query_str_map = {{lot_name, {1}}};
+        }
+        else {
+            parents_query = "SELECT parent FROM parents WHERE lot_name = ? AND parent != ?;"; 
+            parents_query_str_map = {{lot_name, {1,2}}};
+        }
+        auto rp = lotman::Validator::SQL_get_matches2(parents_query, parents_query_str_map);
+        if (!rp.second.empty()) {
+            std::string int_err = rp.second;
+            std::string ext_err = "Failure on call to SQL_get_matches2 when getting parents in get_parents: ";
+            return std::make_pair(std::vector<Lot2>(), ext_err + int_err);
+        }
+
+        parent_names_vec = rp.first;
+        if (recursive) {
+            std::vector<std::string> current_parents{parent_names_vec};
+            parents_query = "SELECT parent FROM parents WHERE lot_name = ? AND parent != ?;"; 
+            while (current_parents.size()>0) {
+                std::vector<std::string> grandparent_names;
+                for (const auto &parent : current_parents) {
+                    parents_query_str_map = {{parent, {1,2}}};
+                    rp = lotman::Validator::SQL_get_matches2(parents_query, parents_query_str_map);
+                    if (!rp.second.empty()) { //There is an error message
+                        std::string int_err = rp.second;
+                        std::string ext_err = "Function call to SQL_get_matches2 failed: ";
+                        return std::make_pair(std::vector<Lot2>(), ext_err + int_err);
+                    }
+                    std::vector<std::string> tmp{rp.first};
+                    grandparent_names.insert(grandparent_names.end(), tmp.begin(), tmp.end());
+                }
+
+                // grandparent_names might have duplicates. Sort and make unique
+                std::sort(grandparent_names.begin(), grandparent_names.end());
+                auto last = std::unique(grandparent_names.begin(), grandparent_names.end());
+                grandparent_names.erase(last, grandparent_names.end());
+
+                current_parents = grandparent_names;
+                parent_names_vec.insert(parent_names_vec.end(), grandparent_names.begin(), grandparent_names.end());
+            }
+        }
+
+        // children_names now has names of all children according to get_self and recursion.
+        // Create lot objects and return vector of lots
+        for (const auto &parent_name : parent_names_vec) {
+            Lot2 lot;
+            auto rp2 = lot.init_name(parent_name);
+            if (!rp2.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Function call to init_name failed: ";
+                return std::make_pair(std::vector<Lot2>(), ext_err + int_err);
+            }
+            parents.push_back(lot);
+        }
+
+        // Assign to lot member vars.
+        if (recursive) {
+            recursive_parents = parents;
+        }
+        else {
+            self_parents = parents;
+        }
+        return std::make_pair(parents, "");
+   }
+   catch (std::exception &exc) {
+        return std::make_pair(std::vector<Lot2>(), exc.what());
+   }
+}
+
+std::pair<std::vector<Lot2>, std::string> lotman::Lot2::get_children(const bool recursive, const bool get_self) {
+    
+    /*
+    FUNCTION FLOW
+    * Create queries and maps based on get_self
+    * Get vector of immediate children
+    * If recursive, get children of children
+    */
+    try {
+        std::vector<std::string> children_names;
+        std::vector<Lot2> children;
+        std::string children_query;
+        std::map<std::string, std::vector<int>> children_query_str_map;
+
+        if (get_self) {
+            children_query = "SELECT lot_name FROM parents WHERE parent = ?;"; 
+            children_query_str_map = {{lot_name, {1}}};
+        }
+        else {
+            children_query = "SELECT lot_name FROM parents WHERE parent = ? and lot_name != ?;"; 
+            children_query_str_map = {{lot_name, {1,2}}};
+        }
+
+        // Get first round of children
+        auto rp = lotman::Validator::SQL_get_matches2(children_query, children_query_str_map); // get all lots who specify lot-to-be-removed (LTBR) as a parent.
+        if (!rp.second.empty()) { //There is an error message
+            std::string int_err = rp.second;
+            std::string ext_err = "Function call to SQL_get_matches2 failed: ";
+            return std::make_pair(std::vector<Lot2>(), ext_err + int_err);
+        }
+
+        children_names = rp.first;
+        if (recursive) {
+            std::vector<std::string> current_children_names{children_names};
+            children_query = "SELECT lot_name FROM parents WHERE parent = ? AND lot_name != ?;"; 
+            while (current_children_names.size()>0) {
+                std::vector<std::string> grandchildren_names;
+                for (const auto &child_name : current_children_names) {
+                    children_query_str_map = {{child_name, {1,2}}};
+                    rp = lotman::Validator::SQL_get_matches2(children_query, children_query_str_map);
+                    if (!rp.second.empty()) { //There is an error message
+                        std::string int_err = rp.second;
+                        std::string ext_err = "Function call to SQL_get_matches2 failed: ";
+                        return std::make_pair(std::vector<Lot2>(), ext_err + int_err);
+                    }
+                    std::vector<std::string> tmp{rp.first};
+                    grandchildren_names.insert(grandchildren_names.end(), tmp.begin(), tmp.end());
+                }
+                // grandchildren_names might have duplicates. Sort and make unique
+                std::sort(grandchildren_names.begin(), grandchildren_names.end());
+                auto last = std::unique(grandchildren_names.begin(), grandchildren_names.end());
+                grandchildren_names.erase(last, grandchildren_names.end());
+
+                current_children_names = grandchildren_names;
+                children_names.insert(children_names.end(), grandchildren_names.begin(), grandchildren_names.end());
+            }
+        }
+        // children_names now has names of all children according to get_self and recursion.
+        // Create lot objects and return vector of lots
+        for (const auto &child_name : children_names) {
+            Lot2 lot;
+            auto rp2 = lot.init_name(child_name);
+            if (!rp2.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Function call to init_name failed: ";
+                return std::make_pair(std::vector<Lot2>(), ext_err + int_err);
+            }
+            children.push_back(lot);
+        }
+            
+        // Assign to lot member vars
+        if (recursive) {
+            recursive_children = children;
+        }
+        else {
+            self_children = children;
+        }
+        return std::make_pair(children, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(std::vector<Lot2>(), exc.what());
+    }
+}
+
+std::pair<std::vector<std::string>, std::string> lotman::Lot2::get_owners(const bool recursive) {
+    try {
+        std::vector<std::string> lot_owners_vec;
+        std::string owners_query = "SELECT owner FROM owners WHERE lot_name = ?;"; 
+        std::map<std::string, std::vector<int>> owners_query_str_map{{lot_name, {1}}};
+        auto rp = lotman::Validator::SQL_get_matches2(owners_query, owners_query_str_map);
+        if (!rp.second.empty()) { // There was an error
+            std::string int_err = rp.second;
+            std::string ext_err = "Failure on call to SQL_get_matches2 when getting owners: ";
+            return std::make_pair(std::vector<std::string>(), ext_err + int_err);
+        }
+
+        std::cout << "Self owner: " << rp.first[0] << std::endl;
+        lot_owners_vec[0] = rp.first[0];
+
+
+
+        if (recursive) {
+            auto rp2 = this->get_parents(true, false);
+            if (!rp2.second.empty()) { // There is an error message
+                std::string int_err = rp2.second;
+                std::string ext_err = "Failure to get parents: ";
+                return std::make_pair(std::vector<std::string>(), ext_err + int_err);
+            }
+            std::vector<Lot2> parents = rp2.first;
+
+            for (const auto &parent : parents) {
+                std::map<std::string, std::vector<int>> owners_query_str_map{{parent.lot_name, {1}}};
+                rp = lotman::Validator::SQL_get_matches2(owners_query, owners_query_str_map);
+                if (!rp.second.empty()) { // There is an error message
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Failure to get owner of parent: ";
+                    return std::make_pair(std::vector<std::string>(), ext_err + int_err);
+                }
+
+                std::vector<std::string> tmp{rp.first};
+                lot_owners_vec.insert(lot_owners_vec.end(), tmp.begin(), tmp.end());
+            }
+        }
+
+        // Sort and remove any duplicates
+        std::sort(lot_owners_vec.begin(), lot_owners_vec.end());
+        auto last = std::unique(lot_owners_vec.begin(), lot_owners_vec.end());
+        lot_owners_vec.erase(last, lot_owners_vec.end());
+
+        // Assign to lot vars
+        if (recursive) {
+            recursive_owners = lot_owners_vec;
+        }
+        else {
+            self_owner = lot_owners_vec[0]; // Lot's only have one explicit owner, so this is where it must be in the vector.
+        }
+        return std::make_pair(lot_owners_vec, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(std::vector<std::string>(), exc.what());
+    }
+}
+
+std::pair<json, std::string> lotman::Lot2::get_restricting_attribute(const std::string key,
+                                                                     const bool recursive) {
+    json internal_obj;
+    std::vector<std::string> value;
+    try {
+        std::array<std::string, 6> allowed_keys{{"dedicated_GB", "opportunistic_GB", "max_num_objects", "creation_time", "expiration_time", "deletion_time"}};
+        if (std::find(allowed_keys.begin(), allowed_keys.end(), key) != allowed_keys.end()) {
+            std::string policy_attr_query = "SELECT " + key + " FROM management_policy_attributes WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> policy_attr_query_str_map{{lot_name, {1}}};
+            auto rp = lotman::Validator::SQL_get_matches2(policy_attr_query, policy_attr_query_str_map);
+            if (!rp.second.empty()) { // There was an error
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to SQL_get_matches2: ";
+                return std::make_pair(internal_obj, ext_err + int_err);
+            }
+            value = rp.first;
+            std::string restricting_parent_name = lot_name;
+
+            if (recursive) {
+                auto rp2 = this->get_parents(true);
+                if (!rp2.second.empty()) { // There was an error
+                    std::string int_err = rp2.second;
+                    std::string ext_err = "Failure to get lot parents: ";
+                    return std::make_pair(internal_obj, ext_err + int_err);
+                }
+
+                std::vector<lotman::Lot2> parents = rp2.first;
+                for (const auto &parent : parents) {
+                    std::map<std::string, std::vector<int>> policy_attr_query_parent_str_map{{parent.lot_name, {1}}};
+                    rp = lotman::Validator::SQL_get_matches2(policy_attr_query, policy_attr_query_parent_str_map);
+                    if (!rp.second.empty()) { // There was an error
+                        std::string int_err = rp.second;
+                        std::string ext_err = "Failure on call to SQL_get_matches2: ";
+                        return std::make_pair(internal_obj, ext_err + int_err);
+                    }
+
+                    std::vector<std::string> compare_value = rp.first;
+                    if (std::stod(compare_value[0]) < std::stod(value[0])) {
+                        value[0] = compare_value[0];
+                        restricting_parent_name = parent.lot_name;
+                    }
+                }
+                internal_obj["lot_name"] = restricting_parent_name;
+                internal_obj["value"] = value[0];
+            }
+            return std::make_pair(internal_obj, "");
+        }
+        else {
+            return std::make_pair(internal_obj, " The key \"" + key + "\" is not recognized.");
+        }
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(internal_obj, exc.what());
+    }                                                        
+}
+
+std::pair<json, std::string> lotman::Lot2::get_lot_dirs(const bool recursive) {
+    try {
+        json path_obj;
+        std::string path_query = "SELECT path, recursive FROM paths WHERE lot_name = ?;"; 
+        //std::string recursive_query = "SELECT recursive FROM paths WHERE path = ? AND lot_name = ?;";
+        std::map<std::string, std::vector<int>> path_query_str_map{{lot_name, {1}}};
+        auto rp =  lotman::Validator::SQL_get_matches_multi_col2(path_query, 2, path_query_str_map);
+        if (!rp.second.empty()) { // There was an error
+            std::string int_err = rp.second;
+            std::string ext_err = "Failure on call to SQL_get_matches_multi_col2: ";
+            return std::make_pair(path_obj, ext_err + int_err);
+        }
+
+        for (const auto &path_rec : rp.first) { // the path is at index 0, and the recursion of the path is at index 1
+            json path_obj_internal;
+            path_obj_internal["lot_name"] = this->lot_name;
+            path_obj_internal["recursive"] = path_rec[1];
+            path_obj[path_rec[0]] = path_obj_internal;
+        }
+
+        if (recursive) { // Not recursion of path, but recursion of dirs associated to a lot, ie the directories associated with lot proper's children
+            auto rp_vec_str = this->get_children(true);
+            if (!rp_vec_str.second.empty()) { // There was an error
+                std::string int_err = rp_vec_str.second;
+                std::string ext_err = "Failure to get children.";
+                return std::make_pair(json(), ext_err+int_err);
+            }
+            for (const auto &child : recursive_children) {
+                std::map<std::string, std::vector<int>> child_path_query_str_map{{child.lot_name, {1}}};
+                rp = lotman::Validator::SQL_get_matches_multi_col2(path_query, 2, child_path_query_str_map);
+                if (!rp.second.empty()) { // There was an error
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Failure on call to SQL_get_matches_multi_col2: ";
+                    return std::make_pair(path_obj, ext_err + int_err);
+                }
+
+                for (const auto &path_rec : rp.first) {
+                    json path_obj_internal;
+                    path_obj_internal["lot_name"] = child.lot_name;
+                    path_obj_internal["recursive"] = path_rec[1];
+                    path_obj[path_rec[0]] = path_obj_internal;
+                }
+            }
+        }
+        return std::make_pair(path_obj, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(json(), exc.what());
+    }
+}
+
+std::pair<json, std::string> lotman::Lot2::get_lot_usage(const std::string key, const bool recursive) {
+
+// TODO: Introduce some notion of verbocity to give options for output, like:
+    // {"dedicated_GB" : 10} vs {"dedicated_GB" : {"personal": 5, "children" : 5}} vs {"dedicated_GB" : {"personal" : 5, "child1" : 2.5, "child2" : 2.5}}
+    // Think a bit more about whether this makes sense.
+
+    // TODO: Might be worthwhile to join some of these sections that share a common preamble
+
+    json output_obj;
+    std::array<std::string, 6> allowed_keys = {"dedicated_GB", "opportunistic_GB", "total_GB", "num_objects", "GB_being_written", "objects_being_written"};
+    if (std::find(allowed_keys.begin(), allowed_keys.end(), key) == allowed_keys.end()) {
+        return std::make_pair(json(), "The key \"" + key + "\" is not recognized.");
+    }
+
+    std::vector<std::string> query_output;
+    std::vector<std::vector<std::string>> query_multi_out;
+
+    if (key == "dedicated_GB") {
+        if (recursive) {
+            std::string rec_ded_usage_query =   "SELECT "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB + lot_usage.children_GB <= management_policy_attributes.dedicated_GB THEN lot_usage.personal_GB + lot_usage.children_GB "
+                                                        "ELSE management_policy_attributes.dedicated_GB "
+                                                    "END AS total, " // For readability, not actually referencing these column names
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN management_policy_attributes.dedicated_GB "
+                                                        "ELSE lot_usage.personal_GB "
+                                                    "END AS personal_contrib, "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN '0' "
+                                                        "WHEN lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.dedicated_GB THEN management_policy_attributes.dedicated_GB - lot_usage.personal_GB "
+                                                        "ELSE lot_usage.children_GB "
+                                                    "END AS children_contrib "
+                                                "FROM lot_usage "
+                                                    "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                "WHERE lot_usage.lot_name = ?;";
+            std::map<std::string, std::vector<int>> ded_GB_query_str_map{{lot_name, {1}}};
+            auto rp_multi = lotman::Validator::SQL_get_matches_multi_col2(rec_ded_usage_query, 3, ded_GB_query_str_map);
+            if (!rp_multi.second.empty()) { // There was an error
+                std::string int_err = rp_multi.second;
+                std::string ext_err = "Failure on call to SQL_get_matches_multi_col2: ";
+                return std::make_pair(json(), ext_err + int_err);
+            }
+            query_multi_out = rp_multi.first;
+            output_obj["total"] = std::stod(query_multi_out[0][0]);
+            output_obj["personal_contrib"] = std::stod(query_multi_out[0][1]);
+            output_obj["children_contrib"] = std::stod(query_multi_out[0][2]);
+        }
+        else {
+            std::string ded_GB_query = "SELECT "
+                                            "CASE "
+                                                "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN management_policy_attributes.dedicated_GB "
+                                                "ELSE lot_usage.personal_GB "
+                                            "END AS total "
+                                        "FROM "
+                                            "lot_usage "
+                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                        "WHERE lot_usage.lot_name = ?;";
+        
+        std::map<std::string, std::vector<int>> ded_GB_query_str_map{{lot_name, {1}}};
+        auto rp_single = lotman::Validator::SQL_get_matches2(ded_GB_query, ded_GB_query_str_map);
+        if (!rp_single.second.empty()) { // There was an error
+            std::string int_err = rp_single.second;
+            std::string ext_err = "Failure on call to SQL_get_matches2: ";
+            return std::make_pair(json(), ext_err + int_err);
+        }
+        query_output = rp_single.first;
+        output_obj["total"] = std::stod(query_output[0]);
+        }
+    }
+
+    else if (key == "opportunistic_GB") {
+        if (recursive) {
+            std::string rec_opp_usage_query =   "SELECT "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.opportunistic_GB +management_policy_attributes.dedicated_GB THEN management_policy_attributes.opportunistic_GB "
+                                                        "WHEN lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.dedicated_GB THEN lot_usage.personal_GB + lot_usage.children_GB - management_policy_attributes.dedicated_GB "
+                                                        "ELSE '0' "
+                                                    "END AS total, "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN management_policy_attributes.opportunistic_GB "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN  lot_usage.personal_GB - management_policy_attributes.dedicated_GB "
+                                                        "ELSE '0' "
+                                                    "END AS personal_contrib, "
+                                                    "CASE "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN '0' "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB AND lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB - lot_usage.personal_GB "
+                                                        "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB AND lot_usage.personal_GB + lot_usage.children_GB < management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN lot_usage.children_GB "
+                                                        "WHEN lot_usage.personal_GB < management_policy_attributes.dedicated_GB AND lot_usage.personal_GB + lot_usage.children_GB >= management_policy_attributes.opportunistic_GB + management_policy_attributes.dedicated_GB THEN management_policy_attributes.opportunistic_GB "
+                                                        "WHEN lot_usage.personal_GB < management_policy_attributes.dedicated_GB AND lot_usage.personal_GB + lot_usage.children_GB > management_policy_attributes.dedicated_GB THEN lot_usage.personal_GB + lot_usage.children_GB - management_policy_attributes.dedicated_GB "
+                                                        "ELSE '0' "
+                                                    "END AS children_contrib "
+                                                "FROM "
+                                                    "lot_usage "
+                                                    "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                                "WHERE lot_usage.lot_name = ?;";
+            std::map<std::string, std::vector<int>> opp_GB_query_str_map{{lot_name, {1}}};
+            auto rp_multi = lotman::Validator::SQL_get_matches_multi_col2(rec_opp_usage_query, 3, opp_GB_query_str_map);
+            if (!rp_multi.second.empty()) { // There was an error
+                std::string int_err = rp_multi.second;
+                std::string ext_err = "Failure on call to SQL_get_matches_multi_col2: ";
+                return std::make_pair(json(), ext_err + int_err);
+            }
+            query_multi_out = rp_multi.first;
+            output_obj["total"] = std::stod(query_multi_out[0][0]);
+            output_obj["personal_contrib"] = std::stod(query_multi_out[0][1]);
+            output_obj["children_contrib"] = std::stod(query_multi_out[0][2]);
+        }
+        else {
+            std::string opp_GB_query =  "SELECT "
+                                            "CASE "
+                                                "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB + management_policy_attributes.opportunistic_GB THEN management_policy_attributes.opportunistic_GB "
+                                                "WHEN lot_usage.personal_GB >= management_policy_attributes.dedicated_GB THEN lot_usage.personal_GB = management_policy_attributes.dedicated_GB "
+                                                "ELSE '0' "
+                                            "END AS total "
+                                        "FROM "
+                                            "lot_usage "
+                                            "INNER JOIN management_policy_attributes ON lot_usage.lot_name=management_policy_attributes.lot_name "
+                                        "WHERE lot_usage.lot_name = ?;";
+
+        std::map<std::string, std::vector<int>> opp_GB_query_str_map{{lot_name, {1}}};
+        auto rp_single = lotman::Validator::SQL_get_matches2(opp_GB_query, opp_GB_query_str_map);
+        if (!rp_single.second.empty()) { // There was an error
+            std::string int_err = rp_single.second;
+            std::string ext_err = "Failure on call to SQL_get_matches2: ";
+            return std::make_pair(json(), ext_err + int_err);
+        }
+        query_output = rp_single.first;
+        output_obj["total"] = std::stod(query_output[0]);
+        }
+    }
+
+    else if (key == "total_GB") {
+        // Get the total usage
+        if (recursive) {
+            // Need to consider usage from children
+            std::string child_usage_GB_query = "SELECT personal_GB, children_GB FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> child_usage_GB_str_map{{lot_name, {1}}};
+            auto rp_multi = lotman::Validator::SQL_get_matches_multi_col2(child_usage_GB_query, 2, child_usage_GB_str_map);
+            if (!rp_multi.second.empty()) { // There was an error
+                std::string int_err = rp_multi.second;
+                std::string ext_err = "Failure on call to SQL_get_matches_multi_col2: ";
+                return std::make_pair(json(), ext_err + int_err);
+            }
+            query_multi_out = rp_multi.first;
+            output_obj["personal_contrib"] = std::stod(query_multi_out[0][0]);
+            output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
+        }
+        else {
+            std::string usage_GB_query = "SELECT personal_GB FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> usage_GB_str_map{{lot_name, {1}}};
+            auto rp_single = lotman::Validator::SQL_get_matches2(usage_GB_query, usage_GB_str_map);
+            if (!rp_single.second.empty()) { // There was an error
+                std::string int_err = rp_single.second;
+                std::string ext_err = "Failure on call to SQL_get_matches2: ";
+                return std::make_pair(json(), ext_err + int_err);
+            }
+            query_output = rp_single.first;
+            output_obj["total"] = std::stod(query_output[0]);
+        }
+    }
+    
+    else if (key == "num_objects") {
+        if (recursive) {
+            std::string rec_num_obj_query = "SELECT personal_objects, children_objects FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> rec_num_obj_str_map{{lot_name, {1}}};
+            auto rp_multi = lotman::Validator::SQL_get_matches_multi_col2(rec_num_obj_query, 2, rec_num_obj_str_map);
+            if (!rp_multi.second.empty()) { // There was an error
+                std::string int_err = rp_multi.second;
+                std::string ext_err = "Failure on call to SQL_get_matches_multi_col2: ";
+                return std::make_pair(json(), ext_err + int_err);
+            }
+            query_multi_out = rp_multi.first;
+            output_obj["personal_contrib"] = std::stod(query_multi_out[0][0]);
+            output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
+        }
+        else {
+
+            std::string num_obj_query = "SELECT personal_objects FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> num_obj_str_map{{lot_name, {1}}};
+            auto rp_single = lotman::Validator::SQL_get_matches2(num_obj_query, num_obj_str_map);
+            if (!rp_single.second.empty()) { // There was an error
+                std::string int_err = rp_single.second;
+                std::string ext_err = "Failure on call to SQL_get_matches2: ";
+                return std::make_pair(json(), ext_err + int_err);
+            }
+            query_output = rp_single.first;
+            output_obj["total"] = std::stod(query_output[0]);
+        }
+    }
+
+    else if (key == "GB_being_written") {
+        // TODO: implement this section
+
+        return std::make_pair(json(), "get_lot_usage for key GB_being_written not yet implemented.");
+    }
+    
+    else if (key == "objects_being_written") {
+        // TODO: implement this section
+
+        return std::make_pair(json(), "get_lot_usage for key objects_being_written not yet implemented.");
+    }
+
+    return output_obj;
+}
+
+std::pair<bool, std::string> lotman::Lot2::add_parents(std::vector<Lot2> parents) {
+    try {
+        auto rp = store_new_parents(parents);
+        if (!rp.first) {
+            std::string int_err = rp.second;
+            std::string ext_err = "Call to lotman::Lot2::store_new_parents failed: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+}
+
+std::pair<bool, std::string> lotman::Lot2::add_paths(std::vector<json> paths) {
+    try {
+        auto rp = store_new_paths(paths);
+        if (!rp.first) {
+            std::string int_err = rp.second;
+            std::string ext_err = "Call to lotman::Lot2::store_new_paths failed: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+}
+
+std::pair<bool, std::string> lotman::Lot2::update_owner(std::string update_val) {
+    try {
+        std::string owner_update_stmt = "UPDATE owners SET owner=? WHERE lot_name=?;";
+        std::map<std::string, std::vector<int>> owner_update_str_map{{lot_name, {2}}, {owner, {1}}};
+        auto rp = store_updates(owner_update_stmt, owner_update_str_map);
+        if (!rp.first) {
+            std::string int_err = rp.second;
+            std::string ext_err = "Failure on call to lotman::Lot2::store_updates when storing owner update: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+}
+
+std::pair<bool, std::string> lotman::Lot2::update_parents(std::map<std::string, std::string> update_map) {
+    try {    
+        std::string parents_update_stmt = "UPDATE parents SET parent=? WHERE lot_name=? AND parent=?";
+        // Need to store modifications per map entry
+        for (const auto &pair : update_map) {
+            std::map<std::string, std::vector<int>> parents_update_str_map{{pair.second, {1}}, {lot_name, {2}}, {pair.first, {3}}};
+            auto rp = store_updates(parents_update_stmt, parents_update_str_map);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to lotman::Lot2::store_updates when storing parents update: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+}
+
+std::pair<bool, std::string> lotman::Lot2::update_paths(std::map<std::string, json> update_map) {
+    try {
+        // incoming update map looks like {"path1" --> {"path" : "path2", "recursive" : false}}
+        std::string paths_update_stmt = "UPDATE paths SET path=? WHERE lot_name=? and path=?;";
+        std::string recursive_update_stmt = "UPDATE paths SET recursive=? WHERE lot_name=? and path=?;";
+
+        // Iterate through updates, first perform recursive update THEN path
+        for (const auto &pair : update_map) {
+            json update_obj = pair.second;
+            // Recursive update (note sqlite does not support bools, so stored as int):
+            std::map<int, std::vector<int>> recursive_update_int_map{{update_obj["recursive"].get<int>(), {1}}};
+            std::map<std::string, std::vector<int>> recursive_update_str_map{{lot_name, {2}}, {pair.first, {3}}};
+            auto rp = store_updates(recursive_update_stmt, recursive_update_str_map, recursive_update_int_map);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to lotman::Lot2::store_updates when storing paths recursive update: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+            
+            // Path update
+            std::map<std::string, std::vector<int>> paths_update_str_map{{update_obj["path"], {1}}, {lot_name, {2}}, {pair.first, {3}}};
+            rp = store_updates(paths_update_stmt, paths_update_str_map);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to lotman::Lot2::store_updates when storing paths path update: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+
+}
+
+std::pair<bool, std::string> lotman::Lot2::update_man_policy_attrs(std::string update_key, double update_val) {
+    try {
+        std::string man_policy_attr_update_stmt_first_half = "UPDATE management_policy_attributes SET ";
+        std::string man_policy_attr_update_stmt_second_half = "=? WHERE lot_name=?;";
+
+        std::array<std::string, 2> dbl_keys = {"dedicated_GB", "opportunistic_GB"};
+        std::array<std::string, 4> int_keys = {"max_num_objects", "creation_time", "expiration_time", "deletion_time"};
+
+        if (std::find(dbl_keys.begin(), dbl_keys.end(), update_key) != dbl_keys.end()) {
+            std::string man_policy_attr_update_stmt = man_policy_attr_update_stmt_first_half + update_key + man_policy_attr_update_stmt_second_half;
+            std::map<std::string, std::vector<int>> man_policy_attr_update_str_map{{lot_name, {2}}};
+            std::map<double, std::vector<int>> man_policy_attr_update_dbl_map{{update_val, {1}}};
+            auto rp = store_updates(man_policy_attr_update_stmt, man_policy_attr_update_str_map, std::map<int, std::vector<int>>(), man_policy_attr_update_dbl_map);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to lotman::Lot2::store_updates when storing management policy attribute update: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+        else if (std::find(int_keys.begin(), int_keys.end(), update_key) != int_keys.end()) {
+            std::string man_policy_attr_update_stmt = man_policy_attr_update_stmt_first_half + update_key + man_policy_attr_update_stmt_second_half;
+            std::map<std::string, std::vector<int>> man_policy_attr_update_str_map{{lot_name, {2}}};
+            std::map<int, std::vector<int>> man_policy_attr_update_int_map{{update_val, {1}}};
+            auto rp = store_updates(man_policy_attr_update_stmt, man_policy_attr_update_str_map, man_policy_attr_update_int_map);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to lotman::Lot2::store_updates when storing management policy attribute update: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+        else {
+            return std::make_pair(false, "Update key not found or not recognized.");
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+}
+
+ std::pair<bool, std::string> lotman::Lot2::update_parent_usage(Lot2 parent, std::string update_stmt, std::map<std::string, std::vector<int>> update_str_map,
+                                                                std::map<int, std::vector<int>> update_int_map, std::map<double, std::vector<int>> update_dbl_map) {
+    try {
+        auto rp = parent.store_updates(update_stmt, update_str_map, update_int_map, update_dbl_map);
+        if (!rp.first) { // There was an error
+            std::string int_err = rp.second;
+            std::string ext_err = "Failure on call to store_updates for parent: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+ }
+
+std::pair<bool, std::string> lotman::Lot2::update_self_usage(const std::string key, const double value) {
+
+    /*
+    Function Flow for update_lot_usage:
+    * Sanitize inputs by making sure key is allowed/known
+    * Get the current usage, used to calculate delta for updating parents' children_* columns
+    * Calculate delta
+    * Update lot proper
+    * For each parent of lot proper, update children_key += delta
+    */
+
+    try {
+        std::array<std::string, 2> allowed_int_keys={"self_objects", "self_objects_being_written"};
+        std::array<std::string, 2> allowed_double_keys={"self_GB", "self_GB_being_written"};
+        std::string update_usage_dynamic_query = "UPDATE lot_usage SET " + key + "=? WHERE lot_name=?;";
+        std::map<std::string, std::vector<int>> update_usage_str_map = {{lot_name, {2}}};
+
+        // Sanitize inputs
+        if (std::find(allowed_int_keys.begin(), allowed_int_keys.end(), key) != allowed_int_keys.end()) {
+            // Get the current value for the lot
+            std::string get_usage_query = "SELECT " + key + " FROM lot_usage WHERE lot_name = ?;";
+            std::map<std::string, std::vector<int>> get_usage_query_str_map{{lot_name, {1}}};
+            auto rp = lotman::Validator::SQL_get_matches2(get_usage_query, get_usage_query_str_map);
+            if (!rp.second.empty()) { // There was an error
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to SQL_get_matches2: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+
+            int current_usage = std::stoi(rp.first[0]);
+            int delta = value - current_usage;
+
+            // Update lot proper
+            std::string update_usage_stmt = "UPDATE lot_usage SET " + key + "=? WHERE lot_name=?;";
+            std::map<std::string, std::vector<int>> update_usage_str_map = {{lot_name, {2}}};
+            std::map<int, std::vector<int>> update_usage_int_map = {{value, {1}}};
+
+
+
+            auto rp_bool_str = this->store_updates(update_usage_dynamic_query, update_usage_str_map, update_usage_int_map);
+            if (!rp_bool_str.first) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to store_updates: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+
+            /* TODO: need some kind of recovery file if we start updating parents and then fail --> for each parent, store  in temp file current usage for key
+                        and delete temp file after done. Use a function "repair_db" that checks for existence of temp file and restores things to those values,
+                        deleting the temp file upon completion.
+            */
+
+            // Update parents
+            auto rp_lotvec_str = this->get_parents(true);
+            if (!rp_lotvec_str.second.empty()) { // There was an error
+                std::string int_err = rp_lotvec_str.second;
+                std::string ext_err = "Failure on call to get_parents: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+
+            std::string children_key = "children" + key.substr(8);
+            std::string parent_usage_query = "SELECT " + children_key + " FROM lot_usage WHERE lot_name = ?;";
+            for (const auto &parent : recursive_parents) {
+                std::map<std::string, std::vector<int>> parent_usage_query_str_map{{parent.lot_name, {1}}};
+                auto rp_vec_str = lotman::Validator::SQL_get_matches2(parent_usage_query, parent_usage_query_str_map);
+                if (!rp_vec_str.second.empty()) { // There was an error
+                    std::string int_err = rp_vec_str.second;
+                    std::string ext_err = "Failure on call to get_parents: ";
+                    return std::make_pair(false, ext_err + int_err);
+                }
+                int current_usage = std::stoi(rp_vec_str.first[0]);
+                std::string update_parent_usage_stmt = "UPDATE lot_usage SET " + children_key + "=? WHERE lot_name=?;";
+                std::map<std::string, std::vector<int>> update_parent_str_map{{parent.lot_name, {2}}};
+                std::map<int, std::vector<int>> update_parent_int_map{{current_usage+delta, {1}}}; // Update children_key to current_usage + delta
+                rp_bool_str = this->update_parent_usage(parent, update_parent_usage_stmt, update_parent_str_map, update_parent_int_map);
+                if (!rp_bool_str.first) { // There was an error
+                    std::string int_err = rp_bool_str.second;
+                    std::string ext_err = "Failure on call to store_updates when updating parent usage: ";
+                    return std::make_pair(false, ext_err + int_err);
+                }
+            }
+        }
+
+        else if (std::find(allowed_double_keys.begin(), allowed_double_keys.end(), key) != allowed_double_keys.end()) {
+        // Get the current value for the lot
+        std::string get_usage_query = "SELECT " + key + " FROM lot_usage WHERE lot_name = ?;";
+        std::map<std::string, std::vector<int>> get_usage_query_str_map{{lot_name, {1}}};
+        auto rp_vec_str = lotman::Validator::SQL_get_matches2(get_usage_query, get_usage_query_str_map);
+        if (!rp_vec_str.second.empty()) {
+            std::string int_err = rp_vec_str.second;
+            std::string ext_err = "Failure on call to SQL_get_matches2: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+
+        double current_usage = std::stod(rp_vec_str.first[0]);
+        double delta = value - current_usage;
+
+        // Update lot proper
+        std::string update_usage_stmt = "UPDATE lot_usage SET " + key + "=? WHERE lot_name=?;";
+        std::map<std::string, std::vector<int>> update_usage_str_map = {{lot_name, {2}}};
+        std::map<double, std::vector<int>> update_usage_double_map = {{value, {1}}};
+        std::map<int, std::vector<int>> plc_hldr_int_map;
+        auto rp_bool_str = this->store_updates(update_usage_dynamic_query, update_usage_str_map, plc_hldr_int_map, update_usage_double_map);
+        if (!rp_bool_str.first) { // There was an error
+            std::string int_err = rp_bool_str.second;
+            std::string ext_err = "Failure on call to store_updates for lot proper: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+
+        // Update parents
+        auto rp_lotvec_str = this->get_parents(true);
+        if (!rp_lotvec_str.second.empty()) { // There was an error
+            std::string int_err = rp_lotvec_str.second;
+            std::string ext_err = "Failure on call to get_parents: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+
+        std::string children_key = "children" + key.substr(8);
+        std::string parent_usage_query = "SELECT " + children_key + " FROM lot_usage WHERE lot_name = ?;";
+        for (const auto &parent : recursive_parents) {
+            std::map<std::string, std::vector<int>> parent_usage_query_str_map{{parent.lot_name, {1}}};
+            rp_vec_str = lotman::Validator::SQL_get_matches2(parent_usage_query, parent_usage_query_str_map);
+            if (!rp_vec_str.second.empty()) { // There was an error
+                std::string int_err = rp_vec_str.second;
+                std::string ext_err = "Failure on call to SQL_get_matches2: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+            double current_usage = std::stod(rp_vec_str.first[0]);
+            std::string update_parent_usage_stmt = "UPDATE lot_usage SET " + children_key + "=? WHERE lot_name=?;";
+            std::map<std::string, std::vector<int>> update_parent_str_map{{parent.lot_name, {2}}};
+            std::map<double, std::vector<int>> update_parent_int_map{{current_usage+delta, {1}}}; // Update children_key to current_usage + delta
+            std::map<int, std::vector<int>> plc_hldr_int_map;
+            rp_bool_str = this->update_parent_usage(parent, update_parent_usage_stmt, update_parent_str_map, plc_hldr_int_map, update_parent_int_map);
+            if (!rp_bool_str.first) { // There was an error
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to store_updates";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+    }
         return std::make_pair(true, "");
     }
     catch (std::exception &exc) {
@@ -123,29 +1160,9 @@ std::pair<bool, std::string> lotman::Lot2::destroy_lot() {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+/*
+OLD CODE SECTION
+*/
 
 bool lotman::Lot::lot_exists(std::string lot_name) {
     std::string lot_exists_query = "SELECT lot_name FROM management_policy_attributes WHERE lot_name = ?;";
