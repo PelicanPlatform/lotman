@@ -15,9 +15,9 @@ public:
 namespace lotman {
 
 class Validator;
-
+class Context;
 /**
- * The Lot class has static member functions for handling top-level actions with lots
+ * The Lot class has member functions for handling top-level actions with lots
  * Eg, adding lots, removing lots, updating lots etc
 */
 
@@ -89,6 +89,7 @@ class Lot2 {
         std::pair<bool, std::string> check_if_root();
         std::pair<bool, std::string> store_lot();
         std::pair<bool, std::string> destroy_lot();
+        std::pair<bool, std::string> destroy_lot_recursive();
 
         std::pair<std::vector<Lot2>, std::string> get_children(const bool recursive = false,
                                                                const bool get_self = false);
@@ -109,7 +110,6 @@ class Lot2 {
         std::pair<bool, std::string> add_parents(std::vector<Lot2> parents);
         std::pair<bool, std::string> add_paths(std::vector<json> paths);
 
-
         std::pair<bool, std::string> update_owner(std::string update_val);
         std::pair<bool, std::string> update_parents(std::map<std::string, std::string> update_map);
         std::pair<bool, std::string> update_paths(std::map<std::string, json> update_map);
@@ -118,10 +118,21 @@ class Lot2 {
         std::pair<bool, std::string> update_parent_usage(Lot2 parent,
                                                          std::string update_stmt, 
                                                          std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
-                                                         std::map<int, std::vector<int>> update_int_map =std::map<int, std::vector<int>>(),
+                                                         std::map<int64_t, std::vector<int>> update_int_map =std::map<int64_t, std::vector<int>>(),
                                                          std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
+        std::pair<bool, std::string> check_context_for_parents(std::vector<std::string> parents, bool include_self = false, bool new_lot = false);
+        std::pair<bool, std::string> check_context_for_parents(std::vector<Lot2> parents, bool include_self = false, bool new_lot = false);
 
-
+        std::pair<bool, std::string> check_context_for_children(std::vector<std::string> children, bool include_self = false);
+        std::pair<bool, std::string> check_context_for_children(std::vector<Lot2> children, bool include_self = false);
+        static std::pair<std::vector<std::string>, std::string> get_lots_past_exp(const bool recursive);
+        static std::pair<std::vector<std::string>, std::string> get_lots_past_del(const bool recursive);
+        static std::pair<std::vector<std::string>, std::string> get_lots_past_opp(const bool recursive_quota, const bool recursive_children);
+        static std::pair<std::vector<std::string>, std::string> get_lots_past_ded(const bool recursive_quota, const bool recursive_children);
+        static std::pair<std::vector<std::string>, std::string> get_lots_past_obj(const bool recursive_quota, const bool recursive_children);
+        static std::pair<std::vector<std::string>, std::string> list_all_lots();
+        static std::pair<std::vector<std::string>, std::string> get_lots_from_dir(std::string dir, const bool recursive);
+        
 
 
 
@@ -132,123 +143,24 @@ class Lot2 {
         std::pair<bool, std::string> store_new_parents(std::vector<Lot2> new_parents);
         std::pair<bool, std::string> store_updates(std::string update_query, 
                                                    std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
-                                                   std::map<int, std::vector<int>> update_int_map =std::map<int, std::vector<int>>(),
+                                                   std::map<int64_t, std::vector<int>> update_int_map =std::map<int64_t, std::vector<int>>(),
                                                    std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
 
 };
 
 
+class Context {
+  public:
+    Context() {}
+    static void set_caller(std::string caller) {
+        m_caller= caller;
+    }
+    static std::string get_caller() { return m_caller; }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class Lot {
-    public:
-        Lot() {}
-        static bool lot_exists(std::string lot_name);
-        static bool is_root(std::string lot_name);
-        // TODO: change add_lot to take in a path_map and a management_policy_map. Front end all of the JSON parsing.
-        static bool add_lot(std::string lot_name, 
-                            std::string owner, 
-                            std::vector<std::string> parents, 
-                            std::vector<std::string> children, 
-                            std::map<std::string, int> paths_map, 
-                            std::map<std::string, int> management_policy_attrs_int_map,
-                            std::map<std::string, unsigned long long> management_policy_attrs_tmstmp_map,
-                            std::map<std::string, double> management_policy_attrs_dbl_map);
-
-        static bool remove_lot(std::string lot_name, 
-                               bool assign_LTBR_parent_as_parent_to_orphans, 
-                               bool assign_LTBR_parent_as_parent_to_non_orphans, 
-                               bool assign_policy_to_children);
-
-        static bool update_lot_params(std::string lot_name, 
-                               std::string owner = std::string(), 
-                               std::map<std::string, std::string> parents_map = std::map<std::string, std::string>(), 
-                               std::map<std::string, int> paths_map = std::map<std::string, int>(), 
-                               std::map<std::string, int> management_policy_attrs_int_map = std::map<std::string, int>(), 
-                               std::map<std::string, double> management_policy_attrs_double_map = std::map<std::string, double>());
-        
-        static bool add_to_lot(std::string lot_name,
-                               std::vector<std::string> owners = std::vector<std::string>(),
-                               std::vector<std::string> parents = std::vector<std::string>(),
-                               std::map<std::string, int> paths_map = std::map<std::string, int>());
-
-        static bool update_lot_usage(std::string lot_name,
-                                     std::string key,
-                                     double value);
-
-        static picojson::object get_lot_usage(const std::string lot_name,
-                                              const std::string key,
-                                              const bool recursive);
-
-        static std::vector<std::string> get_owners(std::string lot_name,
-                                                   bool recursive=false);                               
-
-        static std::vector<std::string> get_parent_names(std::string lot_name, 
-                                                         bool recursive=false,
-                                                         bool get_self=false);
-
-        static std::vector<std::string> get_children_names(std::string lot_name,
-                                                           const bool recursive=false,
-                                                           const bool get_self=false);
-                                                        
-        static picojson::object get_restricting_attribute(const std::string lot_name,
-                                                          const std::string key,
-                                                          const bool recursive);
-        
-        static picojson::object get_lot_dirs(const std::string lot_name,
-                                             const bool recursive);
-
-        static std::vector<std::string> get_lots_from_owners(picojson::array owners_arr);
-
-        static std::vector<std::string> get_lots_from_parents(picojson::array parents_arr);
-
-        static std::vector<std::string> get_lots_from_children(picojson::array children_arr);
-
-        static std::vector<std::string> get_lots_from_paths(picojson::array paths_arr);
-
-        static std::vector<std::string> get_lots_from_int_policy_attr(std::string key, std::string comparator, int comp_value);
-
-        static std::vector<std::string> get_lots_from_double_policy_attr(std::string key, std::string comparator, double comp_value);
-
-        static std::vector<std::string> get_lots_from_usage(std::string key, std::string comparator, double comp_val, bool recursive);
-
-    private:
-        static bool store_lot(std::string lot_name, 
-                              std::string owner, 
-                              std::vector<std::string> parents,  
-                              std::map<std::string, int> paths_map, 
-                              std::map<std::string, int> management_policy_attrs_int_map,
-                              std::map<std::string, unsigned long long> management_policy_attrs_tmstmp_map,
-                              std::map<std::string, double> management_policy_attrs_double_map);
-
-        static bool delete_lot(std::string lot_name);
-        static bool store_modifications(std::string dynamic_query, 
-                                        std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), 
-                                        std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), 
-                                        std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
-        static bool store_new_rows(std::string lot_name,
-                                  std::vector<std::string> owners = std::vector<std::string>(),
-                                  std::vector<std::string> parents = std::vector<std::string>(),
-                                  std::map<std::string, int> paths_map = std::map<std::string, int>());
+  private:
+    static std::string m_caller;
 };
+
 
 /**
  * The Validator class has member functions that check if functions in the Lot class should execute.
@@ -257,7 +169,7 @@ class Lot {
 */
 
 class Validator {
-    friend class lotman::Lot;
+    //friend class lotman::Lot;
     friend class lotman::Lot2;
     public:
         Validator();
@@ -266,10 +178,10 @@ class Validator {
         static bool will_be_orphaned(std::string LTBR, std::string child);
 
     private:
-        static std::vector<std::string> SQL_get_matches(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
-        static std::vector<std::vector<std::string>> SQL_get_matches_multi_col(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
-        static std::pair<std::vector<std::string>, std::string> SQL_get_matches2(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
-        static std::pair<std::vector<std::vector<std::string>>, std::string> SQL_get_matches_multi_col2(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
+        //static std::vector<std::string> SQL_get_matches(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
+        //static std::vector<std::vector<std::string>> SQL_get_matches_multi_col(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); // returns vector of matches to input query
+        static std::pair<std::vector<std::string>, std::string> SQL_get_matches2(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int64_t,std::vector<int>> int_map = std::map<int64_t, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
+        static std::pair<std::vector<std::vector<std::string>>, std::string> SQL_get_matches_multi_col2(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int64_t,std::vector<int>> int_map = std::map<int64_t, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
 };
 
 } // namespace lotman

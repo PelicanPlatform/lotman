@@ -146,8 +146,8 @@ std::pair<bool, std::string> initialize_lotdb2(const std::string &lot_file) {
 
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS paths ("
                         "lot_name NOT NULL,"
-                        "path NOT NULL,"
-                        "recursive NOT_NULL)",
+                        "path UNIQUE NOT NULL,"
+                        "recursive NOT NULL)",
                     NULL, 0, &err_msg);
     if (rc) {
         auto rp = std::make_pair(false, "SQLite paths table creation failed: " + static_cast<std::string>(err_msg));
@@ -242,14 +242,14 @@ std::pair<bool, std::string> lotman::Lot2::write_new() {
     }
 
     // Bind inputs to sql statement
-    rc = sqlite3_bind_text(owner_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC);
+    rc = sqlite3_bind_text(owner_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(owner_stmt);
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed: sqlite errno: " + std::to_string(rc));
     }
 
-    rc = sqlite3_bind_text(owner_stmt, 2, owner.c_str(), owner.size(), SQLITE_STATIC);
+    rc = sqlite3_bind_text(owner_stmt, 2, owner.c_str(), owner.size(), SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(owner_stmt);
         sqlite3_close(db);
@@ -273,13 +273,13 @@ std::pair<bool, std::string> lotman::Lot2::write_new() {
         }
 
         // Bind inputs to sql statement
-        rc = sqlite3_bind_text(parent_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC);
+        rc = sqlite3_bind_text(parent_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
         if (rc != SQLITE_OK) {
             sqlite3_finalize(parent_stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed: sqlite errno: " + std::to_string(rc));
         }
-        rc = sqlite3_bind_text(parent_stmt, 2, parent.c_str(), parent.size(), SQLITE_STATIC);
+        rc = sqlite3_bind_text(parent_stmt, 2, parent.c_str(), parent.size(), SQLITE_TRANSIENT);
         if (rc != SQLITE_OK) {
             sqlite3_finalize(parent_stmt);
             sqlite3_close(db);
@@ -300,7 +300,6 @@ std::pair<bool, std::string> lotman::Lot2::write_new() {
     // Paths
     for (const auto& path : paths) {
         sqlite3_stmt *path_stmt;
-
         rc = sqlite3_prepare_v2(db, "INSERT INTO paths VALUES (?, ?, ?)", -1, &path_stmt, NULL);
         if (rc != SQLITE_OK) {
             sqlite3_close(db);
@@ -308,20 +307,18 @@ std::pair<bool, std::string> lotman::Lot2::write_new() {
         }
 
         // Bind inputs to sql statement
-        rc = sqlite3_bind_text(path_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC);
+        rc = sqlite3_bind_text(path_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
         if (rc != SQLITE_OK) {
             sqlite3_finalize(path_stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite_bind_text for lot_name failed: sqlite errno: " + std::to_string(rc));
         }
-
-        rc = sqlite3_bind_text(path_stmt, 2, path["path"].get<std::string>().c_str(),  path["path"].get<std::string>().size(), SQLITE_STATIC);
+        rc = sqlite3_bind_text(path_stmt, 2, path["path"].get<std::string>().c_str(),  path["path"].get<std::string>().size(), SQLITE_TRANSIENT);
         if (rc != SQLITE_OK) {
             sqlite3_finalize(path_stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite_bind_text for path \"" + path.get<std::string>() + "\" failed: sqlite errno: " + std::to_string(rc));
         }
-
         rc = sqlite3_bind_int(path_stmt, 3, static_cast<int>(path["recursive"].get<bool>()));
         if (rc != SQLITE_OK) {
             sqlite3_finalize(path_stmt);
@@ -348,7 +345,7 @@ std::pair<bool, std::string> lotman::Lot2::write_new() {
     }
 
     // Bind inputs to sql statement
-    rc = sqlite3_bind_text(man_pol_attr_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC);
+    rc = sqlite3_bind_text(man_pol_attr_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(man_pol_attr_stmt);
         sqlite3_close(db);
@@ -412,7 +409,7 @@ std::pair<bool, std::string> lotman::Lot2::write_new() {
     }
 
     // Bind inputs to sql statement
-    rc = sqlite3_bind_text(init_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC);
+    rc = sqlite3_bind_text(init_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(init_stmt);
         sqlite3_close(db);
@@ -502,7 +499,7 @@ std::pair<bool, std::string> lotman::Lot2::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from owners table: sqlite3 errno: " + std::to_string(rc));
     }
-    rc = sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC);
+    rc = sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
@@ -522,7 +519,7 @@ std::pair<bool, std::string> lotman::Lot2::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from parents table: sqlite3 errno: " + std::to_string(rc));
     }
-    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from parents table: sqlite errno: " + std::to_string(rc));
@@ -541,7 +538,7 @@ std::pair<bool, std::string> lotman::Lot2::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from paths table: sqlite3 errno: " + std::to_string(rc));
     }
-    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from paths table: sqlite errno: " + std::to_string(rc));
@@ -560,7 +557,7 @@ std::pair<bool, std::string> lotman::Lot2::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from management_policy_attributes table: sqlite3 errno: " + std::to_string(rc));
     }
-    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from management_policy_attributes table: sqlite errno: " + std::to_string(rc));
@@ -579,7 +576,7 @@ std::pair<bool, std::string> lotman::Lot2::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from usage table: sqlite3 errno: " + std::to_string(rc));
     }
-    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+    if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from usage table: sqlite errno: " + std::to_string(rc));
@@ -600,7 +597,7 @@ std::pair<bool, std::string> lotman::Lot2::delete_lot_from_db() {
 
 
 std::pair<bool, std::string> lotman::Lot2::store_updates(std::string update_stmt, std::map<std::string, std::vector<int>> update_str_map,
-                                                         std::map<int, std::vector<int>> update_int_map, std::map<double, std::vector<int>> update_dbl_map) {
+                                                         std::map<int64_t, std::vector<int>> update_int_map, std::map<double, std::vector<int>> update_dbl_map) {
     auto lot_fname = get_lot_file2();
     if (!lot_fname.first) {
         return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
@@ -622,20 +619,17 @@ std::pair<bool, std::string> lotman::Lot2::store_updates(std::string update_stmt
     // No need to check if maps are empty -- won't enter loop if they are
     for (const auto & key : update_str_map) {
         for (const auto & value : key.second) { // Handles case when a single key needs to be mapped to multiple places in the statement (hence, the map is to a vector of ints)
-            if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC) != SQLITE_OK) {
-                std::cout << "problem with str_map binding" << std::endl;
+            if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
                 return std::make_pair(false, "Call to sqlite3_bind_text for update_str_map failed when preparing to write updates: sqlite errno: " + std::to_string(rc));
             }
         }
     }
-    
 
     for (const auto & key : update_int_map) {
         for (const auto & value : key.second) {
-            if (sqlite3_bind_int(stmt, value, key.first) != SQLITE_OK) {
-                std::cout << "problem with int_map binding" << std::endl;
+            if (sqlite3_bind_int64(stmt, value, key.first) != SQLITE_OK) {
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
                 return std::make_pair(false, "Call to sqlite3_bind_int for update_int_map failed when preparing to write updates: sqlite errno: " + std::to_string(rc));
@@ -643,11 +637,9 @@ std::pair<bool, std::string> lotman::Lot2::store_updates(std::string update_stmt
         }
     }
     
-
     for (const auto & key : update_dbl_map) {
         for (const auto & value : key.second) {
             if (sqlite3_bind_double(stmt, value, key.first) != SQLITE_OK) {
-                std::cout << "problem with double map binding" << std::endl;
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
                 return std::make_pair(false, "Call to sqlite3_bind_double for update_int_map failed when preparing to write updates: sqlite errno: " + std::to_string(rc));
@@ -655,15 +647,29 @@ std::pair<bool, std::string> lotman::Lot2::store_updates(std::string update_stmt
         }
     }
     
-
     // char *prepared_query = sqlite3_expanded_sql(stmt); // Useful to print for debugging
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
-        std::cout << "in rc != sqlite_done" << std::endl;
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return std::make_pair(false, "Failed to write updates: sqlite3 errno: " + std::to_string(rc));
     }
+
+
+
+
+
+
+
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+
+
+
+
+
+
+
 
     return std::make_pair(true, "");
 }
@@ -689,17 +695,17 @@ std::pair<bool, std::string> lotman::Lot2::store_new_paths(std::vector<json> new
         }
 
         // Bind inputs to sql statement
-        if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
             sqlite3_finalize(stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to write new path: sqlite errno: " + std::to_string(rc));
         }
-        if (sqlite3_bind_text(stmt, 2, path["path"].get<std::string>().c_str(), path["path"].get<std::string>().size(), SQLITE_STATIC) != SQLITE_OK) {
+        if (sqlite3_bind_text(stmt, 2, path["path"].get<std::string>().c_str(), path["path"].get<std::string>().size(), SQLITE_TRANSIENT) != SQLITE_OK) {
             sqlite3_finalize(stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite3_bind_text for path failed when preparing to write new path: sqlite errno: " + std::to_string(rc));
         }
-        if (sqlite3_bind_int(stmt, 3, path["recursive"].get<int>()) != SQLITE_OK) {
+        if (sqlite3_bind_int(stmt, 3, path["recursive"].get<bool>()) != SQLITE_OK) {
             sqlite3_finalize(stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite3_bind_int for path failed when preparing to write new path: sqlite errno: " + std::to_string(rc));
@@ -714,6 +720,19 @@ std::pair<bool, std::string> lotman::Lot2::store_new_paths(std::vector<json> new
         sqlite3_exec(db, "COMMIT", 0, 0, 0);
         sqlite3_finalize(stmt); 
     }
+
+
+
+
+
+
+    sqlite3_close(db);
+
+
+
+
+
+
     return std::make_pair(true, "");
 }
 std::pair<bool, std::string> lotman::Lot2::store_new_parents(std::vector<Lot2> new_parents) {
@@ -737,12 +756,12 @@ std::pair<bool, std::string> lotman::Lot2::store_new_parents(std::vector<Lot2> n
         }
 
         // Bind inputs to sql statement
-        if (sqlite3_bind_text(stmt, 1,lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        if (sqlite3_bind_text(stmt, 1,lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
             sqlite3_finalize(stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to write new parents: sqlite errno: " + std::to_string(rc));
         }
-        if (sqlite3_bind_text(stmt, 2, parent.lot_name.c_str(), parent.lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+        if (sqlite3_bind_text(stmt, 2, parent.lot_name.c_str(), parent.lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
             sqlite3_finalize(stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite3_bind_text for parent.lot_name failed when preparing to write new parent: sqlite errno: " + std::to_string(rc));
@@ -757,10 +776,22 @@ std::pair<bool, std::string> lotman::Lot2::store_new_parents(std::vector<Lot2> n
         sqlite3_exec(db, "COMMIT", 0, 0, 0);
         sqlite3_finalize(stmt); 
     }
+
+
+
+
+
+    sqlite3_close(db);
+
+
+
+
+
+
     return std::make_pair(true, "");    
 }
 
-std::pair<std::vector<std::string>, std::string> lotman::Validator::SQL_get_matches2(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map, std::map<int, std::vector<int>> int_map, std::map<double, std::vector<int>> double_map) { 
+std::pair<std::vector<std::string>, std::string> lotman::Validator::SQL_get_matches2(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map, std::map<int64_t, std::vector<int>> int_map, std::map<double, std::vector<int>> double_map) { 
     std::vector<std::string> return_vec;
 
     auto lot_fname = get_lot_file2();
@@ -784,7 +815,7 @@ std::pair<std::vector<std::string>, std::string> lotman::Validator::SQL_get_matc
 
     for (const auto & key : str_map) {
         for (const auto & value : key.second) {
-            rc = sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC);
+            rc = sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT);
             if (rc != SQLITE_OK) {
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
@@ -795,9 +826,8 @@ std::pair<std::vector<std::string>, std::string> lotman::Validator::SQL_get_matc
     
     for (const auto & key : int_map) {
         for (const auto & value : key.second) {
-            rc = sqlite3_bind_int(stmt, value, key.first);
+            rc = sqlite3_bind_int64(stmt, value, key.first);
             if (rc != SQLITE_OK) {
-                std::cout << "problem with int_map binding" << std::endl;
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
                 return std::make_pair(return_vec, "Call to sqlite3_bind_int failed while binding int_map: sqlite3 errno: " + std::to_string(rc));
@@ -809,7 +839,6 @@ std::pair<std::vector<std::string>, std::string> lotman::Validator::SQL_get_matc
         for (const auto & value : key.second) {
             rc = sqlite3_bind_double(stmt, value, key.first);
             if (rc != SQLITE_OK) {
-                std::cout << "problem with double map binding" << std::endl;
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
                 return std::make_pair(return_vec, "Call to sqlite3_bind_double failed while binding double_map: sqlite3 errno: " + std::to_string(rc));
@@ -834,16 +863,14 @@ std::pair<std::vector<std::string>, std::string> lotman::Validator::SQL_get_matc
         sqlite3_close(db);
         return make_pair(return_vec, "There was an error while stepping through SQLite results: sqlite3 errno: " + std::to_string(rc));
     }
-
 }
 
 
 
 
 
-std::pair<std::vector<std::vector<std::string>>, std::string> lotman::Validator::SQL_get_matches_multi_col2(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map, std::map<int, std::vector<int>> int_map, std::map<double, std::vector<int>> double_map) { 
+std::pair<std::vector<std::vector<std::string>>, std::string> lotman::Validator::SQL_get_matches_multi_col2(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map, std::map<int64_t, std::vector<int>> int_map, std::map<double, std::vector<int>> double_map) { 
     std::vector<std::vector<std::string>> return_vec;
-
     auto lot_fname = get_lot_file2();
     if (!lot_fname.first) {
         return std::make_pair(return_vec, "Could not get lot_file: " + lot_fname.second);
@@ -864,8 +891,7 @@ std::pair<std::vector<std::vector<std::string>>, std::string> lotman::Validator:
 
     for (const auto & key : str_map) {
         for (const auto & value : key.second) {
-            if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC) != SQLITE_OK) {
-                std::cout << "problem with str_map binding" << std::endl;
+            if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
                 return std::make_pair(return_vec, "Call to sqlite3_bind_text failed while binding str_map: sqlite3 errno: " + std::to_string(rc));
@@ -875,8 +901,7 @@ std::pair<std::vector<std::vector<std::string>>, std::string> lotman::Validator:
     
     for (const auto & key : int_map) {
         for (const auto & value : key.second) {
-            if (sqlite3_bind_int(stmt, value, key.first) != SQLITE_OK) {
-                std::cout << "problem with int_map binding" << std::endl;
+            if (sqlite3_bind_int64(stmt, value, key.first) != SQLITE_OK) {
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
                 return std::make_pair(return_vec, "Call to sqlite3_bind_int failed while binding int_map: sqlite3 errno: " + std::to_string(rc));
@@ -887,7 +912,6 @@ std::pair<std::vector<std::vector<std::string>>, std::string> lotman::Validator:
     for (const auto & key : double_map) {
         for (const auto & value : key.second) {
             if (sqlite3_bind_double(stmt, value, key.first) != SQLITE_OK) {
-                std::cout << "problem with double map binding" << std::endl;
                 sqlite3_finalize(stmt);
                 sqlite3_close(db);
                 return std::make_pair(return_vec, "Call to sqlite3_bind_double failed while binding double_map: sqlite3 errno: " + std::to_string(rc));
@@ -912,7 +936,6 @@ std::pair<std::vector<std::vector<std::string>>, std::string> lotman::Validator:
         return std::make_pair(return_vec, "");
     }
     else {
-        std::cout << "in rc != sqlite_done" << std::endl;
         sqlite3_finalize(stmt);
         sqlite3_close(db);
         return make_pair(return_vec, "There was an error while stepping through SQLite results: sqlite3 errno: " + std::to_string(rc));
@@ -959,12 +982,12 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //     }
 
 //     // Bind inputs to sql statement
-//     if (sqlite3_bind_text(owner_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(owner_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(owner_stmt);
 //         sqlite3_close(db);
 //         return false;
 //     }
-//     if (sqlite3_bind_text(owner_stmt, 2, owner.c_str(), owner.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(owner_stmt, 2, owner.c_str(), owner.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(owner_stmt);
 //         sqlite3_close(db);
 //         return false;
@@ -993,12 +1016,12 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         }
 
 //         // Bind inputs to sql statement
-//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
 //         }
-//         if (sqlite3_bind_text(stmt, 2, parents_iter.c_str(), parents_iter.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 2, parents_iter.c_str(), parents_iter.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
@@ -1031,12 +1054,12 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         }
 
 //         // Bind inputs to sql statement
-//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
 //         }
-//         if (sqlite3_bind_text(stmt, 2, path.first.c_str(), path.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 2, path.first.c_str(), path.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
@@ -1106,7 +1129,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //     }
 
 //     // Bind inputs to sql statement
-//     if (sqlite3_bind_text(man_pol_attr_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(man_pol_attr_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(man_pol_attr_stmt);
 //         sqlite3_close(db);
 //         return false;
@@ -1162,7 +1185,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //     }
 
 //     // Bind inputs to sql statement
-//     if (sqlite3_bind_text(init_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(init_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(init_stmt);
 //         sqlite3_close(db);
 //         return false;
@@ -1220,7 +1243,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         sqlite3_close(db);
 //         return false;
 //     }
-//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(stmt);
 //         sqlite3_close(db);
 //         return false;
@@ -1239,7 +1262,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         sqlite3_close(db);
 //         return false;
 //     }
-//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(stmt);
 //         sqlite3_close(db);
 //         return false;
@@ -1258,7 +1281,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         sqlite3_close(db);
 //         return false;
 //     }
-//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(stmt);
 //         sqlite3_close(db);
 //         return false;
@@ -1277,7 +1300,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         sqlite3_close(db);
 //         return false;
 //     }
-//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(stmt);
 //         sqlite3_close(db);
 //         return false;
@@ -1296,7 +1319,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         sqlite3_close(db);
 //         return false;
 //     }
-//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//     if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //         sqlite3_finalize(stmt);
 //         sqlite3_close(db);
 //         return false;
@@ -1339,7 +1362,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 
 //     for (const auto & key : str_map) {
 //         for (const auto & value : key.second) {
-//             if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+//             if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //                 std::cout << "problem with str_map binding" << std::endl;
 //                 sqlite3_finalize(stmt);
 //                 sqlite3_close(db);
@@ -1421,7 +1444,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 
 //     for (const auto & key : str_map) {
 //         for (const auto & value : key.second) {
-//             if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+//             if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //                 std::cout << "problem with str_map binding" << std::endl;
 //                 sqlite3_finalize(stmt);
 //                 sqlite3_close(db);
@@ -1506,7 +1529,7 @@ OLD FUNCTIONS, WORKING TO REPLACE
 
 //     for (const auto & key : str_map) {
 //         for (const auto & value : key.second) {
-//             if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+//             if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //                 std::cout << "problem with str_map binding" << std::endl;
 //                 sqlite3_finalize(stmt);
 //                 sqlite3_close(db);
@@ -1577,12 +1600,12 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         }
 
 //         // Bind inputs to sql statement
-//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
 //         }
-//         if (sqlite3_bind_text(stmt, 2, owner.c_str(), owner.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 2, owner.c_str(), owner.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
@@ -1607,12 +1630,12 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         }
 
 //         // Bind inputs to sql statement
-//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
 //         }
-//         if (sqlite3_bind_text(stmt, 2, parent.c_str(), parent.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 2, parent.c_str(), parent.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
@@ -1637,12 +1660,12 @@ OLD FUNCTIONS, WORKING TO REPLACE
 //         }
 
 //         // Bind inputs to sql statement
-//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;
 //         }
-//         if (sqlite3_bind_text(stmt, 2, path.first.c_str(), path.first.size(), SQLITE_STATIC) != SQLITE_OK) {
+//         if (sqlite3_bind_text(stmt, 2, path.first.c_str(), path.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
 //             sqlite3_finalize(stmt);
 //             sqlite3_close(db);
 //             return false;

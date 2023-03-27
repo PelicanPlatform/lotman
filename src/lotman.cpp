@@ -7,6 +7,12 @@
 #include "lotman_internal.h"
 #include "lotman_version.h"
 
+//ss
+/*
+Initialize context -- Default is empty
+*/
+
+std::string lotman::Context::m_caller{""};
 
 using json = nlohmann::json;
 
@@ -19,7 +25,6 @@ const char * lotman_version() {
 }
 
 int lotman_add_lot(const char *lotman_JSON_str, 
-                   const char *lotman_context, 
                    char **err_msg) {
     // TODO: Check for context and figure out what to do with it
     // TODO: Create JSON schema and verify JSON input before calling functions that rely on specific structures.
@@ -87,6 +92,26 @@ int lotman_add_lot(const char *lotman_JSON_str,
             return -1;
         }
 
+        // Check for context and make sure caller is allowed to add the lot as specified
+        rp = lot.check_context_for_parents(lot.parents, false, true);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Error while checking context for parents: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+        rp = lot.check_context_for_children(lot.children);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Error while checking context for children: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
         rp = lot.store_lot();
         if (!rp.first) {
             if (err_msg) {
@@ -105,184 +130,6 @@ int lotman_add_lot(const char *lotman_JSON_str,
         }
         return -1;
     }
-
-    // picojson::value lotman_JSON;
-    // std::string err = picojson::parse(lotman_JSON, lotman_JSON_str);
-    // if (!err.empty()) {
-    //     std::cerr << "LotMan JSON can't be parsed -- it's probably malformed!";
-    //     std::cerr << err << std::endl;
-    // }
-
-    // if (!lotman_JSON.is<picojson::object>()) {
-    //     std::cerr << "LotMan JSON is not recognized as an object -- it's probably malformed!" << std::endl;
-    //     return -1;
-    // }
-
-    // auto lot_obj = lotman_JSON.get<picojson::object>();
-    // auto iter = lot_obj.begin();
-    // if (iter == lot_obj.end()) {
-    //     std::cerr << "Something is wrong -- LotMan JSON object appears empty." << std::endl;
-    //     return -1;
-    // }
-
-    // std::string lot_name, owner;
-    // std::vector<std::string> parents, children;
-    // std::map<std::string, int> management_policy_attrs_int_map, paths_map;
-    // std::map<std::string, unsigned long long> management_policy_tmstmp_map;
-    // std::map<std::string, double> management_policy_attrs_double_map;
-
-    // for (iter; iter != lot_obj.end(); ++iter) {
-    //     auto first_item = iter->first; 
-    //     auto second_item = iter->second; 
-
-    //     if (first_item == "lot_name") {
-    //         if (!second_item.is<std::string>()) {
-    //             std::cerr << "Something is wrong -- lot name is not recognized as a string." << std::endl;
-    //             return -1;
-    //         }
-    //         lot_name = second_item.get<std::string>();
-    //     }
-    //     else if (first_item == "owner") { 
-    //         if (!second_item.is<std::string>()) {
-    //             std::cerr << "Something is wrong -- the specified owner is not recognized as an array." << std::endl;
-    //             return -1;
-    //         }
-    //         owner = second_item.get<std::string>();
-    //     }
-    //     else if (first_item == "parents") {
-    //         if (!second_item.is<picojson::array>()) {
-    //             std::cerr << "Something is wrong -- parents array is not array." << std::endl;
-    //             return -1; 
-    //         }
-    //         auto parents_array = second_item.get<picojson::array>();
-    //         if (parents_array.empty()) {
-    //             std::cerr << "Something is wrong -- parents array appears empty." << std::endl;
-    //             return -1;
-    //         }
-    //         for (auto & parents_iter : parents_array) {
-    //             if (!parents_iter.is<std::string>()) {
-    //                 std::cerr << "Something is wrong -- one of the parents can't be interpreted as a string." << std::endl;
-    //                 return -1;
-    //             }
-    //             parents.push_back(parents_iter.get<std::string>());
-    //         }
-    //     }
-    //     else if (first_item == "children") {
-    //         if (!second_item.is<picojson::array>()) {
-    //             std::cerr << "Something is wrong -- children array is not array." << std::endl;
-    //             return -1; 
-    //         }
-    //         auto children_array = second_item.get<picojson::array>();
-    //         if (children_array.empty()) {
-    //             std::cerr << "Something is wrong -- it looks like there should be children but none were found. Did you forget to add children?" << std::endl;
-    //             return -1;
-    //         }
-    //         for (auto & children_iter : children_array) {
-    //             if (!children_iter.is<std::string>()) {
-    //                 std::cerr << "Something is wrong -- one of the children can't be interpreted as a string." << std::endl;
-    //                 return -1;
-    //             }
-    //             children.push_back(children_iter.get<std::string>());
-    //         }
-    //     }
-
-    //     else if (first_item == "management_policy_attrs") {
-    //         if (!second_item.is<picojson::object>()) {
-    //             std::cerr << "Something is wrong -- management_policy_attrs appears to be malformed." << std::endl;
-    //             return -1;
-    //         }
-
-    //         auto management_policy_attrs = second_item.get<picojson::object>();
-    //         auto management_policy_attrs_iter = management_policy_attrs.begin();
-    //         if (management_policy_attrs_iter == management_policy_attrs.end()) {
-    //             std::cerr << "Management policy attributes object appears empty" << std::endl;
-    //             return -1;
-    //         }
-    //         for (management_policy_attrs_iter; management_policy_attrs_iter != management_policy_attrs.end(); ++management_policy_attrs_iter) {
-    //             std::array<std::string, 2> double_attributes{"dedicated_GB", "opportunistic_GB"};
-    //             std::array<std::string, 1> int_attributes{"max_num_objects"};
-    //             std::array<std::string, 3> timestamp_attributes{"creation_time", "expiration_time", "deletion_time"};
-
-    //             if (std::find(double_attributes.begin(), double_attributes.end(), management_policy_attrs_iter->first) !=double_attributes.end()) {
-    //                 if (!management_policy_attrs_iter->second.is<double>()) {
-    //                     std::cerr << "The value provided for: " << management_policy_attrs_iter->first << " is not recognized as a number" << std::endl;
-    //                     return -1;
-    //                 }
-    //                 management_policy_attrs_double_map[management_policy_attrs_iter->first] = management_policy_attrs_iter->second.get<double>();
-    //             }
-
-    //             else if (std::find(int_attributes.begin(), int_attributes.end(), management_policy_attrs_iter->first) != int_attributes.end()) {
-    //                 if (!management_policy_attrs_iter->second.is<double>()) {
-    //                     std::cerr << "The value provided for: " << management_policy_attrs_iter->first << " is not recognized as a number" << std::endl;
-    //                     return -1;
-    //                 }
-    //                 management_policy_attrs_int_map[management_policy_attrs_iter->first] = management_policy_attrs_iter->second.get<double>();
-    //             }
-
-    //             else if (std::find(timestamp_attributes.begin(), timestamp_attributes.end(), management_policy_attrs_iter->first) != timestamp_attributes.end()) {
-
-    //                 if (!management_policy_attrs_iter->second.is<double>()) {
-    //                     std::cerr << "The value provided for: " << management_policy_attrs_iter->first << " is not recognized as a number" << std::endl;
-    //                     return -1;
-    //                 }
-    //                 management_policy_tmstmp_map[management_policy_attrs_iter->first] = management_policy_attrs_iter->second.get<double>();
-    //             }
-
-    //             else {
-    //                 std::cout << "management policy key not recognized" << management_policy_attrs_iter->first << std::endl;
-    //                 return -1;
-    //             }
-    //         }
-    //     }
-
-    //     else if (first_item == "paths") {
-    //         if (!second_item.is<picojson::array>()) {
-    //             std::cout << "Second item not recognized as array" << std::endl;
-    //             return -1;
-    //         }
-
-    //         picojson::array paths_array = second_item.get<picojson::array>();
-    //         if (paths_array.empty()) {
-    //             std::cerr << "second item empty" << std::endl;
-    //             return -1;
-    //         }
-
-    //         for (auto & paths_array_iter : paths_array) {
-    //             if (!paths_array_iter.is<picojson::object>()) {
-    //                 std::cerr << "in the paths array, entry is not an object" << std::endl;
-    //                 return -1;
-    //             }
-    //             picojson::object path_update_obj = paths_array_iter.get<picojson::object>();
-    //             auto path_update_obj_iter = path_update_obj.begin();
-    //             if (path_update_obj_iter == path_update_obj.end()) {
-    //                 std::cerr << "path update obj appears empty" << std::endl;
-    //                 return -1;
-    //             }
-    //             for (path_update_obj_iter; path_update_obj_iter != path_update_obj.end(); ++path_update_obj_iter) {
-    //                 if (!path_update_obj_iter->second.is<bool>()) {
-    //                     std::cerr << "A recursion flag for the path: " << path_update_obj_iter->first << "is not recognized " << std::endl;
-    //                     return -1;
-    //                 }
-    //                 paths_map[path_update_obj_iter->first] = path_update_obj_iter->second.get<bool>();
-    //             }
-    //         } 
-    //     }
-    //     else {
-    //         std::cout << "An unrecognized key was provdided: " << first_item << std::endl;
-    //     }
-    // }
-
-    // try {
-    //     if (!lotman::Lot::add_lot(lot_name, owner, parents, children, paths_map, management_policy_attrs_int_map, management_policy_tmstmp_map, management_policy_attrs_double_map)) {
-    //         if (err_msg) {*err_msg = strdup("Failed to add lot");}
-    //         std::cout << "error: " << *err_msg << std::endl;
-    //         return -1;
-    //     }
-    // }
-    // 
-    // }
-
-    // return 0;
 }
 
 int lotman_remove_lot(const char *lot_name, 
@@ -290,7 +137,6 @@ int lotman_remove_lot(const char *lot_name,
                       const bool assign_LTBR_parent_as_parent_to_non_orphans, 
                       const bool assign_policy_to_children,
                       const bool override_policy,
-                      const char *lotman_context, 
                       char **err_msg) {
     // TODO: Check for context and figure out what to do with it
     try {
@@ -320,6 +166,18 @@ int lotman_remove_lot(const char *lot_name,
             return -1;
         }
 
+        // To destroy a lot, caller must own the lot (not just the contents of the lot)
+        // This implies caller owns a parent of the the lot.
+        lot.get_parents(true, true); // Lots that are self owners own the lot as well as its content
+        rp = lot.check_context_for_parents(lot.recursive_parents, true);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Error while checking context for parents: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
 
         // Use this block when you've created reassignment policies in the database
         // if (override_policy) { // Don't bother to load the assigned policy, just initialize
@@ -383,34 +241,75 @@ int lotman_remove_lot(const char *lot_name,
         }
         return -1;
     }
-
-
-    // if (!lot_name) {
-    //     if (err_msg) {*err_msg = strdup("Name for the lot to be removed must not be nullpointer.");}
-    //     return -1;
-    // }
-
-    // try {
-    //     if (!lotman::Lot::remove_lot(lot_name, assign_LTBR_parent_as_parent_to_orphans, assign_LTBR_parent_as_parent_to_non_orphans, assign_policy_to_children)) {
-    //         if (err_msg) {*err_msg = strdup("Failed to remove lot");}
-    //         std::cout << "error: " << *err_msg << std::endl;
-    //         return -1;
-    //     }
-    // }
-    // catch(std::exception &exc) {
-    //     if (err_msg) {
-    //         *err_msg = strdup(exc.what());
-    //     }
-    //     return -1;
-    // }
-
-    // return 0;
 }
 
-int lotman_update_lot(const char *lotman_JSON_str, 
-                      const char *lotman_context,
-                      char **err_msg) {
 
+int lotman_remove_lots_recursive(const char *lot_name, char **err_msg) {
+    try {
+        auto rp = lotman::Lot2::lot_exists(lot_name);
+        if (!rp.first) {
+            if (err_msg) {
+                if (rp.second.empty()) { // function worked, but lot does not exist
+                    *err_msg = strdup("That was easy! The lot does not exist, so it doesn't have to be removed.");
+                }
+                else {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }            
+            return -1;
+            }
+        }
+
+        lotman::Lot2 lot;
+        rp = lot.init_name(lot_name);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Function call to init_name failed: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        // To destroy a lot, caller must own the lot (not just the contents of the lot)
+        // This implies caller owns a parent of the the lot.
+        lot.get_parents(true, true); // Lots that are self owners own the lot as well as its content
+        rp = lot.check_context_for_parents(lot.recursive_parents, true);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Error while checking context for parents: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        rp = lot.destroy_lot_recursive();
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failed to remove lot from database: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+
+}
+
+
+
+
+int lotman_update_lot(const char *lotman_JSON_str, 
+                      char **err_msg) {
     try {
         json update_JSON_obj = json::parse(lotman_JSON_str);
 
@@ -449,12 +348,41 @@ int lotman_update_lot(const char *lotman_JSON_str,
             }
             return -1; 
         }
+        // Check that lot exists
+        auto rp = lotman::Lot2::lot_exists(update_JSON_obj["lot_name"]);
+        if (!rp.first) {
+            if (err_msg) {
+                if (!rp.second.empty()) { // There was an error
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Failure on call to lot_exists: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+                else { // Lot does not exist
+                    std::string err = "Lot does not exist";
+                    *err_msg = strdup(err.c_str());
+                }
+            }
+            return -1; 
+        }
+
         lotman::Lot2 lot;
-        auto rp = lot.init_name(update_JSON_obj["lot_name"]);
+        rp = lot.init_name(update_JSON_obj["lot_name"]);
         if (!rp.first) {
             if (err_msg) {
                 std::string int_err = rp.second;
                 std::string ext_err = "Failed to initialize lot name: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1; 
+        }
+
+        //Check for context
+        lot.get_parents(true, true);
+        rp = lot.check_context_for_parents(lot.recursive_parents, true);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Error while checking context for parents: ";
                 *err_msg = strdup((ext_err + int_err).c_str());
             }
             return -1; 
@@ -537,159 +465,9 @@ int lotman_update_lot(const char *lotman_JSON_str,
         }
         return -1;
     }
-
-
-    // picojson::value lotman_JSON;
-    // std::string err = picojson::parse(lotman_JSON, lotman_JSON_str);
-    // if (!err.empty()) {
-    //     std::cerr << "LotMan JSON can't be parsed -- it's probably malformed!";
-    //     std::cerr << err << std::endl;
-    //     return -1;
-    // }
-
-    // if (!lotman_JSON.is<picojson::object>()) {
-    //     std::cerr << "LotMan JSON is not recognized as an object -- it's probably malformed!" << std::endl;
-    //     return -1;
-    // }
-
-    // auto lot_update_obj = lotman_JSON.get<picojson::object>();
-    // auto iter = lot_update_obj.begin();
-    // if (iter == lot_update_obj.end()) {
-    //     std::cerr << "Something is wrong -- LotMan update JSON object appears empty." << std::endl;
-    //     return -1;
-    // }
-
-    // std::string lot_name, owner;
-    // std::map<std::string, std::string> parents_map;
-    // std::map<std::string, int> paths_map, management_policy_attrs_int_map;
-    // std::map<std::string, double> management_policy_attrs_double_map;
-    // for (iter; iter != lot_update_obj.end(); ++iter) {
-    //     auto first_item = iter->first; 
-    //     auto second_item = iter->second; 
-
-    //     if (first_item == "lot_name") {
-    //         if (!second_item.is<std::string>()) {
-    //             std::cerr << "Something is wrong -- lot name is not recognized as a string." << std::endl;
-    //             return -1;
-    //         }
-    //         lot_name = second_item.get<std::string>();
-    //     }
-    //     else if (first_item == "owner") {
-    //         if (!second_item.is<std::string>()) {
-    //             std::cout << "Something is wrong -- owner is not recognized as a string." << std::endl;
-    //             return -1;
-    //         }
-    //         owner = second_item.get<std::string>();
-    //     }
-    //     else if (first_item == "parents") {
-    //         if (!second_item.is<picojson::array>()) {
-    //             std::cout << "Second item not recognized as array" << std::endl;
-    //             return -1;
-    //         }
-
-    //         picojson::array parents_array = second_item.get<picojson::array>();
-    //         if (parents_array.empty()) {
-    //             std::cerr << "second item empty" << std::endl;
-    //             return -1;
-    //         }
-
-    //         for (auto & parents_array_iter : parents_array) {
-    //             if (!parents_array_iter.is<picojson::object>()) {
-    //                 std::cerr << "in the parents array, entry is not an object" << std::endl;
-    //                 return -1;
-    //             }
-    //             picojson::object parent_update_obj = parents_array_iter.get<picojson::object>();
-    //             auto parent_update_obj_iter = parent_update_obj.begin();
-    //             if (parent_update_obj_iter == parent_update_obj.end()) {
-    //                 std::cerr << "Parent update obj appears empty" << std::endl;
-    //                 return -1;
-    //             }
-    //             for (parent_update_obj_iter; parent_update_obj_iter != parent_update_obj.end(); ++parent_update_obj_iter) {
-    //                 parents_map[parent_update_obj_iter->first] = parent_update_obj_iter->second.get<std::string>();
-    //             }
-    //         }
-            
-    //     }
-
-    //     else if (first_item == "management_policy_attrs") {
-    //         if (!second_item.is<picojson::object>()) {
-    //             std::cerr << "management policy object is not an object" << std::endl;
-    //             return -1;
-    //         }
-    //         picojson::object management_policy_attrs = second_item.get<picojson::object>();
-
-    //         auto management_policy_attrs_iter = management_policy_attrs.begin();
-    //         if (management_policy_attrs_iter == management_policy_attrs.end()) {
-    //             std::cerr << "Management policy attributes object appears empty" << std::endl;
-    //             return -1;
-    //         }
-    //         for (management_policy_attrs_iter; management_policy_attrs_iter != management_policy_attrs.end(); ++management_policy_attrs_iter) {
-    //             std::array<std::string, 2> double_attributes{"dedicated_GB", "opportunistic_GB"};
-    //             std::array<std::string, 4> int_attributes{"max_num_objects", "creation_time", "expiration_time", "deletion_time"};
-    //             if (std::find(double_attributes.begin(), double_attributes.end(), management_policy_attrs_iter->first) !=double_attributes.end()) {
-    //                 management_policy_attrs_double_map[management_policy_attrs_iter->first] = management_policy_attrs_iter->second.get<double>();
-    //             }
-    //             else if (std::find(int_attributes.begin(), int_attributes.end(), management_policy_attrs_iter->first) != int_attributes.end()) {
-    //                 management_policy_attrs_int_map[management_policy_attrs_iter->first] = management_policy_attrs_iter->second.get<double>();
-    //             }
-
-    //             else {
-    //                 std::cout << "management policy key not recognized" << std::endl;
-    //                 return -1;
-    //             }
-
-    //         }
-    //     }
-
-    //     else if (first_item == "paths") {
-    //         if (!second_item.is<picojson::array>()) {
-    //             std::cout << "Second item not recognized as array" << std::endl;
-    //             return -1;
-    //         }
-
-    //         picojson::array paths_array = second_item.get<picojson::array>();
-    //         if (paths_array.empty()) {
-    //             std::cerr << "second item empty" << std::endl;
-    //             return -1;
-    //         }
-
-    //         for (auto & paths_array_iter : paths_array) {
-    //             if (!paths_array_iter.is<picojson::object>()) {
-    //                 std::cerr << "in the paths array, entry is not an object" << std::endl;
-    //                 return -1;
-    //             }
-    //             picojson::object path_update_obj = paths_array_iter.get<picojson::object>();
-    //             auto path_update_obj_iter = path_update_obj.begin();
-    //             if (path_update_obj_iter == path_update_obj.end()) {
-    //                 std::cerr << "path update obj appears empty" << std::endl;
-    //                 return -1;
-    //             }
-    //             for (path_update_obj_iter; path_update_obj_iter != path_update_obj.end(); ++path_update_obj_iter) {
-    //                 paths_map[path_update_obj_iter->first] = path_update_obj_iter->second.get<bool>();
-    //             }
-    //         } 
-    //     }
-    //     else {
-    //         std::cout << "An unrecognized key was provdided: " << first_item << std::endl;
-    //     }
-    // }
-
-    // try {
-    //     if (!lotman::Lot::update_lot_params(lot_name, owner, parents_map, paths_map, management_policy_attrs_int_map, management_policy_attrs_double_map)) {
-    //         if (err_msg) {*err_msg = strdup("Failed to modify lot");}
-    //         std::cout << "error: " << *err_msg << std::endl;
-    //         return -1;
-    //     }
-    // }
-    // catch(std::exception &exc) {
-    //     if (err_msg) {*err_msg = strdup(exc.what());}
-    //     return -1;
-    // }
-
-    // return 0;
 }
 
-int lotman_add_to_lot(const char *lotman_JSON_str, const char *lotman_context, char **err_msg) {
+int lotman_add_to_lot(const char *lotman_JSON_str, char **err_msg) {
     try {    
         json addition_obj = json::parse(lotman_JSON_str);
 
@@ -742,6 +520,18 @@ int lotman_add_to_lot(const char *lotman_JSON_str, const char *lotman_context, c
             return -1; 
         }
 
+        //Check for context
+        lot.get_parents(true, true);
+        rp = lot.check_context_for_parents(lot.recursive_parents, true);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Error while checking context for parents: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1; 
+        }
+
         // Start checking which keys to operate on
         if (!addition_obj["parents"].is_null()) {
             std::vector<lotman::Lot2> parent_lots;
@@ -785,7 +575,7 @@ int lotman_add_to_lot(const char *lotman_JSON_str, const char *lotman_context, c
     }
 }
 
-int lotman_is_root(const char *lot_name, const char *lotman_context, char **err_msg) {
+int lotman_is_root(const char *lot_name, char **err_msg) {
     if (!lot_name) {
         if (err_msg) {*err_msg = strdup("Name for the lot whose rootness is to be determined must not be nullpointer.");}
         return -1;
@@ -831,7 +621,6 @@ int lotman_is_root(const char *lot_name, const char *lotman_context, char **err_
 }
 
 int lotman_lot_exists(const char *lot_name, 
-                      const char *lotman_context, 
                       char **err_msg) {
     if (!lot_name) {
         if (err_msg) {*err_msg = strdup("Name for the lot whose existence is to be determined must not be nullpointer.");}
@@ -886,12 +675,9 @@ int lotman_get_owners(const char *lot_name,
             return -1;
         }
         
-
         lotman::Lot2 lot;
         lot.init_name(lot_name);
-
         auto rp_vec_str = lot.get_owners(recursive);
-
         if (!rp_vec_str.second.empty()) { // There was an error
             if (err_msg) {
                 std::string int_err = rp_vec_str.second;
@@ -900,17 +686,8 @@ int lotman_get_owners(const char *lot_name,
             }
             return -1;
         }
+
         std::vector<std::string> owners_list = rp_vec_str.first;
-
-        for (auto &owner : owners_list) {
-            std::cout << "Owner: " << owner << std::endl;
-        }
-
-
-
-
-
-
         auto owners_list_c = static_cast<char **>(malloc(sizeof(char *) * (owners_list.size() +1))); 
         owners_list_c[owners_list.size()] = nullptr;
         int idx = 0;
@@ -934,35 +711,6 @@ int lotman_get_owners(const char *lot_name,
         }
         return -1;
     }
-
-
-    // std::vector<std::string> owners_list;
-    // try {
-    //     owners_list = lotman::Lot::get_owners(lot_name, recursive);
-    // } 
-    // catch (std::exception &exc) {
-    //     if (err_msg) {
-    //         *err_msg = strdup(exc.what());
-    //     }
-    //     return -1;
-    // }
-
-    // auto owners_list_c = static_cast<char **>(malloc(sizeof(char *) * (owners_list.size() +1))); 
-    // owners_list_c[owners_list.size()] = nullptr;
-    // int idx = 0;
-    // for (const auto &iter : owners_list) {
-    //     owners_list_c[idx] = strdup(iter.c_str());
-    //     if (!owners_list_c[idx]) {
-    //         lotman_free_string_list(owners_list_c);
-    //         if (err_msg) {
-    //             *err_msg = strdup("Failed to create a copy of string entry in list");
-    //         }
-    //         return -1;
-    //     }
-    //     idx++;
-    // }
-    // *output = owners_list_c;
-    // return 0;
 }
 
 void lotman_free_string_list(char **str_list) {
@@ -1040,34 +788,6 @@ int lotman_get_parent_names(const char *lot_name,
         }
         return -1;
     }
-
-    // std::vector<std::string> parents_list;
-    // try {
-    //     parents_list = lotman::Lot::get_parent_names(lot_name, recursive, get_self);
-    // } 
-    // catch (std::exception &exc) {
-    //     if (err_msg) {
-    //         *err_msg = strdup(exc.what());
-    //     }
-    //     return -1;
-    // }
-
-    // auto parents_list_c = static_cast<char **>(malloc(sizeof(char *) * (parents_list.size() +1))); 
-    // parents_list_c[parents_list.size()] = nullptr;
-    // int idx = 0;
-    // for (const auto &iter : parents_list) {
-    //     parents_list_c[idx] = strdup(iter.c_str());
-    //     if (!parents_list_c[idx]) {
-    //         lotman_free_string_list(parents_list_c);
-    //         if (err_msg) {
-    //             *err_msg = strdup("Failed to create a copy of string entry in list");
-    //         }
-    //         return -1;
-    //     }
-    //     idx++;
-    // }
-    // *output = parents_list_c;
-    // return 0;
 }
 
 int lotman_get_children_names(const char *lot_name, 
@@ -1137,35 +857,6 @@ int lotman_get_children_names(const char *lot_name,
         }
         return -1;
     }
-
-
-    // std::vector<std::string> children_list;
-    // try {
-    //     children_list = lotman::Lot::get_children_names(lot_name, recursive, get_self);
-    // } 
-    // catch (std::exception &exc) {
-    //     if (err_msg) {
-    //         *err_msg = strdup(exc.what());
-    //     }
-    //     return -1;
-    // }
-
-    // auto children_list_c = static_cast<char **>(malloc(sizeof(char *) * (children_list.size() +1))); 
-    // children_list_c[children_list.size()] = nullptr;
-    // int idx = 0;
-    // for (const auto &iter : children_list) {
-    //     children_list_c[idx] = strdup(iter.c_str());
-    //     if (!children_list_c[idx]) {
-    //         lotman_free_string_list(children_list_c);
-    //         if (err_msg) {
-    //             *err_msg = strdup("Failed to create a copy of string entry in list");
-    //         }
-    //         return -1;
-    //     }
-    //     idx++;
-    // }
-    // *output = children_list_c;
-    // return 0;
 }
 
 int lotman_get_policy_attributes(const char *policy_attributes_JSON_str,  
@@ -1234,7 +925,7 @@ int lotman_get_policy_attributes(const char *policy_attributes_JSON_str,
                     }
                     return -1; 
                 }
-                output_obj[pair.key()] = rp_json_bool;
+                output_obj[pair.key()] = rp_json_bool.first;
             }
         }
 
@@ -1250,63 +941,12 @@ int lotman_get_policy_attributes(const char *policy_attributes_JSON_str,
         }
         return -1;
     }
-
-
-    // if (!policy_attributes_JSON_str) {
-    //     if (err_msg) {*err_msg = strdup("The policy attributes string must not be nullpointer.");}
-    //     return -1;
-    // }
-
-
-    // picojson::value policy_attributes_JSON;
-    // std::string err = picojson::parse(policy_attributes_JSON, policy_attributes_JSON_str);
-    // if (!err.empty()) {
-    //     std::cerr << "Policy attributes JSON can't be parsed -- it's probably malformed!";
-    //     std::cerr << err << std::endl;
-    // }
-
-    // if (!policy_attributes_JSON.is<picojson::object>()) {
-    //     std::cerr << "Policy attributes JSON is not recognized as an object -- it's probably malformed!" << std::endl;
-    //     return -1;
-    // }
-
-    // auto policy_attributes_input_obj = policy_attributes_JSON.get<picojson::object>();
-    // auto iter = policy_attributes_input_obj.begin();
-    // if (iter == policy_attributes_input_obj.end()) {
-    //     std::cerr << "Something is wrong -- the policy attributes JSON object appears empty." << std::endl;
-    //     return -1;
-    // }
-
-    // picojson::object policy_attributes_output_obj;
-    // try {
-    //     for (iter; iter!=policy_attributes_input_obj.end(); ++iter) {
-    //         std::string key = iter->first;
-    //         auto value = iter->second;
-    //         if (!value.is<bool>()) {
-    //             std::cerr << "The value for key \"" << key << "\" is not recognized as a bool." << std::endl;
-    //         }
-    //         int recursive = value.get<bool>();
-    //         policy_attributes_output_obj[key] = picojson::value(lotman::Lot::get_restricting_attribute(lot_name, key, recursive));
-    //     }
-    //     std::string policy_attributes_output_str = picojson::value(policy_attributes_output_obj).serialize();
-    //     auto policy_attributes_output_str_c = static_cast<char *>(malloc(sizeof(char) * (policy_attributes_output_str.length() + 1)));
-    //     policy_attributes_output_str_c = strdup(policy_attributes_output_str.c_str());
-    //     *output = policy_attributes_output_str_c;
-    //     return 0;
-    // } 
-    // catch (std::exception &exc) {
-    //     if (err_msg) {
-    //         *err_msg = strdup(exc.what());
-    //     }
-    //     return -1;
-    // }
 }
 
 int lotman_get_lot_dirs(const char *lot_name, 
                         const bool recursive, 
                         char **output,
                         char **err_msg) {
-    
     if (!lot_name) {
         if (err_msg) {*err_msg = strdup("Name for the lot whose directories are to be obtained must not be nullpointer.");}
         return -1;
@@ -1314,31 +954,30 @@ int lotman_get_lot_dirs(const char *lot_name,
 
     try {
         auto rp = lotman::Lot2::lot_exists(lot_name);
-            if (!rp.first) {
-                if (err_msg) {
-                    if (rp.second.empty()) { // function worked, but lot does not exist
-                        *err_msg = strdup("That was easy! The lot does not exist, so nothing can be added to it.");
-                    }
-                    else {
-                        std::string int_err = rp.second;
-                        std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
-                        *err_msg = strdup((ext_err + int_err).c_str());
-                    }            
-                return -1;
+        if (!rp.first) {
+            if (err_msg) {
+                if (rp.second.empty()) { // function worked, but lot does not exist
+                    *err_msg = strdup("That was easy! The lot does not exist, so nothing can be added to it.");
                 }
-            }
-
-            lotman::Lot2 lot;
-            rp = lot.init_name(lot_name);
-            if (!rp.first) {
-                if (err_msg) {
+                else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Failed to initialize lot name: ";
+                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
-                }
-                return -1; 
+                }            
+            return -1;
             }
+        }
 
+        lotman::Lot2 lot;
+        rp = lot.init_name(lot_name);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failed to initialize lot name: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1; 
+        }
 
         json output_obj;
         auto rp_json_str = lot.get_lot_dirs(recursive);
@@ -1351,9 +990,8 @@ int lotman_get_lot_dirs(const char *lot_name,
             return -1; 
         }
 
-        output_obj = rp.first;
+        output_obj = rp_json_str.first;
         std::string output_obj_str = output_obj.dump();
-
         auto output_obj_str_c = static_cast<char *>(malloc(sizeof(char) * (output_obj_str.length() + 1)));
         output_obj_str_c = strdup(output_obj_str.c_str());
         *output = output_obj_str_c;
@@ -1365,25 +1003,6 @@ int lotman_get_lot_dirs(const char *lot_name,
         }
         return -1;
     }
-
-    // picojson::object lot_dirs_output_obj;
-    // try {
-    //     lot_dirs_output_obj = lotman::Lot::get_lot_dirs(lot_name, recursive);
-    // } 
-    // catch (std::exception &exc) {
-    //     if (err_msg) {
-    //         *err_msg = strdup(exc.what());
-    //     }
-    //     return -1;
-    // }
-
-
-    // std::string lot_dirs_output_str = picojson::value(lot_dirs_output_obj).serialize();
-
-    // auto lot_dirs_output_str_c = static_cast<char *>(malloc(sizeof(char) * (lot_dirs_output_str.length() + 1)));
-    // lot_dirs_output_str_c = strdup(lot_dirs_output_str.c_str());
-    // *output = lot_dirs_output_str_c;
-    // return 0;
 }
 
 int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
@@ -1439,8 +1058,19 @@ int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
             }
             return -1; 
         }
-    
-    
+
+        //Check for context
+        lot.get_parents(true, true);
+        rp = lot.check_context_for_parents(lot.recursive_parents, true);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Error while checking context for parents: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1; 
+        }
+
         for (const auto &pair : update_usage_JSON.items()) {
             if (pair.key() != "lot_name") {
                 rp = lot.update_self_usage(pair.key(), pair.value());
@@ -1463,52 +1093,6 @@ int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
         }
         return -1;
     }
-    
-    // picojson::value update_JSON;
-
-    // std::string err = picojson::parse(update_JSON, update_JSON_str);
-    // if (!err.empty()) {
-    //     std::cerr << "Update JSON can't be parsed -- it's probably malformed!";
-    //     std::cerr << err << std::endl;
-    //     return -1;
-    // }
-
-    // if (!update_JSON.is<picojson::object>()) {
-    //     std::cerr << "Update JSON is not recognized as an object -- it's probably malformed!" << std::endl;
-    //     return -1;
-    // }
-
-    // auto usage_update_obj = update_JSON.get<picojson::object>();
-    // auto iter = usage_update_obj.begin();
-    // if (iter == usage_update_obj.end()) {
-    //     std::cerr << "Something is wrong -- Usage update JSON object appears empty." << std::endl;
-    //     return -1;
-    // }
-
-    // for (iter; iter != usage_update_obj.end(); ++iter) {
-    //     std::string key = iter->first;
-    //     auto value = iter->second;
-
-    //     std::array<std::string, 4> allowed_keys={"personal_GB", "personal_objects", "personal_GB_being_written", "personal_objects_being_written"};
-    //     if (std::find(allowed_keys.begin(), allowed_keys.end(), key) != allowed_keys.end()) {
-    //         if (!value.is<double>()) {
-    //             std::cerr << "The value associated with key \"" << key << "\" is not recognized as a number." << std::endl;
-    //             return -1;
-    //         }
-    //         bool rv = lotman::Lot::update_lot_usage(lot_name, key, value.get<double>());
-    //         if (!rv) {
-    //             std::cerr << "Call to lotman::Lot::update_lot_usage failed." << std::endl;
-    //             return -1;
-    //         }
-    //     }
-
-    //     else {
-    //         std::cerr << "Key \"" << key << "\" not recognized" << std::endl;
-    //         return -1;
-    //     }
-    // }
-
-    // return 0;
 }
 
 int lotman_get_lot_usage(const char *usage_attributes_JSON_str, char **output, char **err_msg) {  
@@ -1577,7 +1161,7 @@ int lotman_get_lot_usage(const char *usage_attributes_JSON_str, char **output, c
                     return -1; 
                 }
 
-                output_obj[pair.key()] = lot.get_lot_usage(pair.key(), pair.value());
+                output_obj[pair.key()] = rp_json_str.first;
             }
         }
 
@@ -1592,65 +1176,7 @@ int lotman_get_lot_usage(const char *usage_attributes_JSON_str, char **output, c
             *err_msg = strdup(exc.what());
         }
         return -1;
-    }
-
-    // if (!usage_attributes_JSON_str) {
-    //     if (err_msg) {*err_msg = strdup("Usage attributes JSON for the lot whose usage is to be obtained must not be nullpointer.");}
-    //     return -1;
-    // }
-
-    // picojson::value usage_attributes_JSON;
-    
-    // std::string err = picojson::parse(usage_attributes_JSON, usage_attributes_JSON_str);
-    // if (!err.empty()) {
-    //     std::cerr << "Usage attributes JSON can't be parsed -- it's probably malformed!";
-    //     std::cerr << err << std::endl;
-    //     return -1;
-    // }
-
-    // if (!usage_attributes_JSON.is<picojson::object>()) {
-    //     std::cerr << "Usage JSON is not recognized as an object -- it's probably malformed!" << std::endl;
-    //     return -1;
-    // }
-
-    // auto usage_attrs_JSON_obj = usage_attributes_JSON.get<picojson::object>();
-    // auto iter = usage_attrs_JSON_obj.begin();
-    // if (iter == usage_attrs_JSON_obj.end()) {
-    //     std::cerr << "Something is wrong -- Usage update JSON object appears empty." << std::endl;
-    //     return -1;
-    // }
-
-    // std::array<std::string, 4> allowed_keys = {"dedicated_GB", "opportunistic_GB", "total_GB", "num_objects"};
-    // picojson::object usage_output_obj;
-    // try {
-    //     for (iter; iter != usage_attrs_JSON_obj.end(); ++iter) {
-    //         std::string key = iter->first;
-    //         auto value = iter->second;
-    //         if (std::find(allowed_keys.begin(), allowed_keys.end(), key) != allowed_keys.end()) {
-    //             if (!value.is<bool>()) {
-    //                 std::cerr << "The value for key \"" << key << "\" is not recognized as a bool." << std::endl;
-    //                 return -1;
-    //             }
-    //             bool recursive = value.get<bool>();
-    //             usage_output_obj[key] = picojson::value(lotman::Lot::get_lot_usage(lot_name,key, recursive));
-    //         }
-    //         else {
-    //             std::cerr << "The key \"" << key << "\" is not recognized" << std::endl;
-    //             return -1;
-    //         }
-    //     }
-    //     std::string usage_output_str = picojson::value(usage_output_obj).serialize();
-    //     auto usage_output_str_c = static_cast<char *>(malloc(sizeof(char) * (usage_output_str.length() + 1)));
-    //     usage_output_str_c = strdup(usage_output_str.c_str());
-    //     *output = usage_output_str_c;
-    //     return 0;
-    // }
-    // catch (std::exception &exc) {
-    //     if (err_msg) {
-    //         *err_msg = strdup(exc.what());
-    //     }
-    //     return -1;
-    // }  
+    } 
 }
 
 int lotman_check_db_health(char **err_msg) {
@@ -1658,6 +1184,443 @@ int lotman_check_db_health(char **err_msg) {
 }
 
 
+int lotman_set_context(const char *key, const char *value, char **err_msg) {
+    try {
+        if (!key) {
+            if (err_msg) {
+                *err_msg = strdup("A key must be provided.");
+            }
+            return -1;
+        }
+
+        if (strcmp(key, "caller")==0) {
+            lotman::Context::set_caller(value);
+        }
+
+        else {
+            if (err_msg) {
+                std::string err = "Unrecognized key: " + static_cast<std::string>(key);
+                *err_msg = strdup(err.c_str());
+            }
+            return -1;
+            }
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+int lotman_get_lots_past_exp(const bool recursive, char ***output, char **err_msg) {
+    try {
+        auto rp = lotman::Lot2::get_lots_past_exp(recursive);
+        if (!rp.second.empty()) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to get_lots_past_exp: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+        std::vector<std::string> expired_lots = rp.first;
+
+        auto expired_lots_c = static_cast<char **>(malloc(sizeof(char *) * (expired_lots.size() +1))); 
+        expired_lots_c[expired_lots.size()] = nullptr;
+        int idx = 0;
+        for (const auto &iter : expired_lots) {
+            expired_lots_c[idx] = strdup(iter.c_str());
+            if (!expired_lots_c[idx]) {
+                lotman_free_string_list(expired_lots_c);
+                if (err_msg) {
+                    *err_msg = strdup("Failed to create a copy of string entry in list");
+                }
+                return -1;
+            }
+            idx++;
+        }
+        *output = expired_lots_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+int lotman_get_lots_past_del(const bool recursive, char ***output, char **err_msg) {
+    try {
+        auto rp = lotman::Lot2::get_lots_past_del(recursive);
+        if (!rp.second.empty()) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to get_lots_past_del: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        std::vector<std::string> deletion_lots = rp.first;
+
+        auto deletion_lots_c = static_cast<char **>(malloc(sizeof(char *) * (deletion_lots.size() +1))); 
+        deletion_lots_c[deletion_lots.size()] = nullptr;
+        int idx = 0;
+        for (const auto &iter : deletion_lots) {
+            deletion_lots_c[idx] = strdup(iter.c_str());
+            if (!deletion_lots_c[idx]) {
+                lotman_free_string_list(deletion_lots_c);
+                if (err_msg) {
+                    *err_msg = strdup("Failed to create a copy of string entry in list");
+                }
+                return -1;
+            }
+            idx++;
+        }
+        *output = deletion_lots_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+int lotman_get_lots_past_opp(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
+    try {
+        auto rp = lotman::Lot2::get_lots_past_opp(recursive_quota, recursive_children);
+        if (!rp.second.empty()) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to get_lots_past_del: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        std::vector<std::string> past_opp_lots = rp.first;
+
+        auto past_opp_lots_c = static_cast<char **>(malloc(sizeof(char *) * (past_opp_lots.size() +1))); 
+        past_opp_lots_c[past_opp_lots.size()] = nullptr;
+        int idx = 0;
+        for (const auto &iter : past_opp_lots) {
+            past_opp_lots_c[idx] = strdup(iter.c_str());
+            if (!past_opp_lots_c[idx]) {
+                lotman_free_string_list(past_opp_lots_c);
+                if (err_msg) {
+                    *err_msg = strdup("Failed to create a copy of string entry in list");
+                }
+                return -1;
+            }
+            idx++;
+        }
+        *output = past_opp_lots_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+int lotman_get_lots_past_ded(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
+    try {
+        auto rp = lotman::Lot2::get_lots_past_ded(recursive_quota, recursive_children);
+        if (!rp.second.empty()) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to get_lots_past_del: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        std::vector<std::string> past_ded_lots = rp.first;
+
+        auto past_ded_lots_c = static_cast<char **>(malloc(sizeof(char *) * (past_ded_lots.size() +1))); 
+        past_ded_lots_c[past_ded_lots.size()] = nullptr;
+        int idx = 0;
+        for (const auto &iter : past_ded_lots) {
+            past_ded_lots_c[idx] = strdup(iter.c_str());
+            if (!past_ded_lots_c[idx]) {
+                lotman_free_string_list(past_ded_lots_c);
+                if (err_msg) {
+                    *err_msg = strdup("Failed to create a copy of string entry in list");
+                }
+                return -1;
+            }
+            idx++;
+        }
+        *output = past_ded_lots_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+int lotman_get_lots_past_obj(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
+    try {
+        auto rp = lotman::Lot2::get_lots_past_obj(recursive_quota, recursive_children);
+        if (!rp.second.empty()) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to get_lots_past_del: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        std::vector<std::string> past_obj_lots = rp.first;
+
+        auto past_obj_lots_c = static_cast<char **>(malloc(sizeof(char *) * (past_obj_lots.size() +1))); 
+        past_obj_lots_c[past_obj_lots.size()] = nullptr;
+        int idx = 0;
+        for (const auto &iter : past_obj_lots) {
+            past_obj_lots_c[idx] = strdup(iter.c_str());
+            if (!past_obj_lots_c[idx]) {
+                lotman_free_string_list(past_obj_lots_c);
+                if (err_msg) {
+                    *err_msg = strdup("Failed to create a copy of string entry in list");
+                }
+                return -1;
+            }
+            idx++;
+        }
+        *output = past_obj_lots_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+
+
+
+int lotman_list_all_lots(char ***output, char **err_msg) {
+    try {
+        auto rp = lotman::Lot2::list_all_lots();
+        if (!rp.second.empty()) { // There was an error
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to list_all_lots: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        std::vector<std::string> all_lots = rp.first;
+
+        auto all_lots_c = static_cast<char **>(malloc(sizeof(char *) * (all_lots.size() +1))); 
+        all_lots_c[all_lots.size()] = nullptr;
+        int idx = 0;
+        for (const auto &iter : all_lots) {
+            all_lots_c[idx] = strdup(iter.c_str());
+            if (!all_lots_c[idx]) {
+                lotman_free_string_list(all_lots_c);
+                if (err_msg) {
+                    *err_msg = strdup("Failed to create a copy of string entry in list");
+                }
+                return -1;
+            }
+            idx++;
+        }
+        *output = all_lots_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+
+int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **output, char **err_msg) {
+    try {
+        if (!lot_name) {
+            if (err_msg) {*err_msg = strdup("Name for the lot to be returned as JSON must not be nullpointer.");}
+            return -1;
+        }
+
+        lotman::Lot2 lot;
+        lot.init_name(lot_name);
+
+        json output_obj;
+
+        // Start populating fields in output_obj
+
+        // Add name
+        output_obj["lot_name"] = lot_name;
+
+        // Add owner(s) according to recursive flag
+        std::pair<std::vector<std::string>, std::string> rp_vec_str;
+        rp_vec_str = lot.get_owners(recursive);
+        if (!rp_vec_str.second.empty()) { // There was an error
+            if (err_msg) {
+                std::string int_err = rp_vec_str.second;
+                std::string ext_err = "Failure on call to get_owners: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+        if (recursive) {
+            output_obj["owners"] = rp_vec_str.first;
+        }
+        else {
+            output_obj["owners"] = rp_vec_str.first[0]; // Only one owner, this is where it will be.
+        }
+        
+        // Add parents according to recursive flag
+        std::pair<std::vector<lotman::Lot2>, std::string> rp_lotvec_str;
+        rp_lotvec_str = lot.get_parents(recursive, true);
+        if (!rp_lotvec_str.second.empty()) { // There was an error
+            if (err_msg) {
+                std::string int_err = rp_lotvec_str.second;
+                std::string ext_err = "Failure on call to get_parents: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+        std::vector<std::string> tmp;
+        for (const auto &parent : rp_lotvec_str.first) {
+            tmp.push_back(parent.lot_name);
+        }
+        output_obj["parents"] = tmp;
+
+        // Add children according to recursive flag
+        rp_lotvec_str = lot.get_children(recursive, false);
+        if (!rp_lotvec_str.second.empty()) { // There was an error
+            if (err_msg) {
+                std::string int_err = rp_lotvec_str.second;
+                std::string ext_err = "Failure on call to get_children: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+        tmp = {};
+        for (const auto &child : rp_lotvec_str.first) {
+            tmp.push_back(child.lot_name);
+        }
+        output_obj["children"] = tmp;
+
+        // Add paths according to recursive flag
+        std::pair<json, std::string> rp_json_str;
+        rp_json_str = lot.get_lot_dirs(recursive);
+        if (!rp_json_str.second.empty()) { // There was an error
+            if (err_msg) {
+                std::string int_err = rp_json_str.second;
+                std::string ext_err = "Failure on call to get_lot_dirs: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+        output_obj["paths"] = rp_json_str.first;
+
+        // Add management policy attributes according to recursive flag
+        std::array<std::string, 6> man_pol_keys = {"dedicated_GB", "opportunistic_GB", "max_num_objects", "creation_time", "deletion_time", "expiration_time"};
+        json internal_man_pol_obj;
+        for (const auto &key : man_pol_keys) {
+            rp_json_str = lot.get_restricting_attribute(key, recursive);
+            if (!rp_json_str.second.empty()) { // There was an error
+                if (err_msg) {
+                    std::string int_err = rp_json_str.second;
+                    std::string ext_err = "Failure on call to get_restricting_attribute: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+                return -1;
+            }
+
+            internal_man_pol_obj[key] = rp_json_str.first;
+        }
+        output_obj["management_policy_attrs"] = internal_man_pol_obj;
+
+        // Add usage according to recursive flag
+        std::array<std::string, 6> usage_keys = {"dedicated_GB", "opportunistic_GB", "total_GB", "num_objects", "GB_being_written", "objects_being_written"};
+        json internal_usage_obj;
+        for (const auto &key : usage_keys) {
+            rp_json_str = lot.get_lot_usage(key, recursive);
+            if (!rp_json_str.second.empty()) { // There was an error
+                if (err_msg) {
+                    std::string int_err = rp_json_str.second;
+                    std::string ext_err = "Failure on call to get_lot_usage: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+                return -1;
+            }
+            internal_usage_obj[key] = rp_json_str.first;
+        }
+        output_obj["usage"] = internal_usage_obj;
+
+        // Copy the object to output
+        std::string output_str = output_obj.dump();
+        auto output_str_c = static_cast<char *>(malloc(sizeof(char) * (output_str.length() + 1)));
+        output_str_c = strdup(output_str.c_str());
+        *output = output_str_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+int lotman_get_lots_from_dir(const char *dir, const bool recursive, char ***output, char **err_msg) {
+    try {
+
+        auto rp = lotman::Lot2::get_lots_from_dir(dir, recursive);
+        if (!rp.second.empty()) { // There was an error
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to list_all_lots: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
+        std::vector<std::string> lots_from_dir = rp.first;
+
+        auto lots_from_dir_c = static_cast<char **>(malloc(sizeof(char *) * (lots_from_dir.size() +1))); 
+        lots_from_dir_c[lots_from_dir.size()] = nullptr;
+        int idx = 0;
+        for (const auto &iter : lots_from_dir) {
+            lots_from_dir_c[idx] = strdup(iter.c_str());
+            if (!lots_from_dir_c[idx]) {
+                lotman_free_string_list(lots_from_dir_c);
+                if (err_msg) {
+                    *err_msg = strdup("Failed to create a copy of string entry in list");
+                }
+                return -1;
+            }
+            idx++;
+        }
+        *output = lots_from_dir_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
 
 
 //int lotman_get_matching_lots(const char *criteria_JSON_str, 
