@@ -1234,6 +1234,65 @@ std::pair<bool, std::string> lotman::Lot2::update_self_usage(const std::string k
 }
 
 
+
+/*
+SECTION UNDER MAINTENANCE
+BEGIN
+*/
+
+std::pair<bool, std::string> lotman::Lot2::update_usage_by_dirs(json update_JSON) {
+    
+    DirUsageUpdate dirUpdate;
+    dirUpdate.JSON_math(update_JSON);
+    
+    
+    
+    
+    
+    
+    return std::make_pair(false, "Under development");
+    
+    
+    
+    
+    
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+END
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 std::pair<std::vector<std::string>, std::string> lotman::Lot2::get_lots_past_exp(const bool recursive) {
     try {
         std::vector<std::string> expired_lots;

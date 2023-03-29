@@ -1095,6 +1095,55 @@ int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
     }
 }
 
+
+
+
+int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg) {
+    try {
+        if (!update_JSON_str) {
+            if (err_msg) {*err_msg = strdup("Update JSON must not be null.");}
+            return -1;
+        }
+
+        json update_JSON = json::parse(update_JSON_str);
+
+        auto rp = lotman::Lot2::update_usage_by_dirs(update_JSON);
+
+        std::cout << "In lotman.cpp, rp = " << rp.first << ", " << rp.second;
+
+
+        return -1;
+
+
+
+
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 int lotman_get_lot_usage(const char *usage_attributes_JSON_str, char **output, char **err_msg) {  
     try {
         json get_usage_obj = json::parse(usage_attributes_JSON_str);

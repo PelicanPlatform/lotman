@@ -47,6 +47,10 @@ int lotman_get_policy_attributes(const char *policy_attributes_JSON, char **outp
 int lotman_get_lot_dirs(const char *lot_name, const bool recursive, char **output, char **err_msg);
 int lotman_get_lot_usage(const char *usage_attributes_JSON, char **output, char **err_msg);
 int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg);
+int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg);
+
+
+
 void lotman_free_string_list(char **str_list);
 int lotman_check_db_health(char **err_msg);
 int lotman_get_lots_past_exp(const bool recursive, char ***output, char **err_msg);

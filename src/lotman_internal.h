@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <stdio.h>
 #include <string>
 #include <vector>
@@ -120,6 +121,7 @@ class Lot2 {
                                                          std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
                                                          std::map<int64_t, std::vector<int>> update_int_map =std::map<int64_t, std::vector<int>>(),
                                                          std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
+        static std::pair<bool, std::string> update_usage_by_dirs(json update_JSON);
         std::pair<bool, std::string> check_context_for_parents(std::vector<std::string> parents, bool include_self = false, bool new_lot = false);
         std::pair<bool, std::string> check_context_for_parents(std::vector<Lot2> parents, bool include_self = false, bool new_lot = false);
 
@@ -148,6 +150,186 @@ class Lot2 {
 
 };
 
+
+class DirUsageUpdate : public Lot2 {
+public: 
+    int m_depth;
+    std::string m_current_path;
+    std::string m_parent_prefix;
+
+
+
+
+
+
+
+    DirUsageUpdate(): m_depth{0}, m_current_path{}, m_parent_prefix{} {}
+    DirUsageUpdate(int depth, std::string path): m_depth{depth}, m_current_path{}, m_parent_prefix{path} {}
+
+    std::pair<bool, std::string> JSON_math(json update_JSON) {
+        std::map<std::string, double> size_updates;
+        std::map<std::string, int64_t> obj_updates;        
+        std::map<std::string, double> size_writing_updates;
+        std::map<std::string, int64_t> obj_writing_updates;
+        for (const auto &update : update_JSON) {
+            double usage_GB;
+            int64_t num_obj;
+            double GB_being_written;
+            int64_t objects_being_written;
+            if (update.contains("size_GB")) {
+                usage_GB = update["size_GB"].get<double>();
+            }
+            if (update.contains("num_obj")) {
+                num_obj = update["num_obj"].get<int64_t>();
+            }
+
+            if (update.contains("GB_being_written")) {
+                GB_being_written = update["GB_being_written"].get<double>();
+            }
+            if (update.contains("objects_being_written")) {
+                objects_being_written = update["objects_being_written"].get<int64_t>();
+            }
+
+            std::string path = update["path"];
+
+            if (path.substr(0,1) != "/") { // get rid of preceding extra slash
+                m_current_path = m_parent_prefix + "/" + path;
+            }
+            else {
+                 m_current_path = m_parent_prefix + path;
+            }
+
+            // Figure out which lot to associate with the dir
+            auto rp_vec_str = get_lots_from_dir(m_current_path, false);
+            if (!rp_vec_str.second.empty()) { // There was an error
+                std::string int_err = rp_vec_str.second;
+                std::string ext_err = "Failure on call to get_lots_from_dir: ";
+
+                std::cout << "Error for rp_vec_str 1: " << ext_err + int_err << std::endl;
+
+                return std::make_pair(false, ext_err + int_err);
+            }
+
+            Lot2 lot;
+            lot.init_name(rp_vec_str.first[0]);
+            // Need a way to check if the path is stored as recursive
+            auto rp_json_str = lot.get_lot_dirs(false); // Probably don't need all the dirs unless the plan is to use this more than once...
+            if (!rp_json_str.second.empty()) { // There was an error
+                std::string int_err = rp_json_str.second;
+                std::string ext_err = "Failure on call to get_lots_from_dir: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+
+            json lot_dirs_json = rp_json_str.first;
+            bool recursive;
+            if (!lot_dirs_json[m_current_path]["recursive"].is_null()) {
+                recursive = lot_dirs_json[m_current_path]["recursive"].get<bool>();
+            }
+            else {
+                recursive = false;
+            }            
+            
+            // If the dir includes values from subdirs and it is not recursive, we need to subtract subdir usage per attribute
+            if (update["includes_subdirs"].get<bool>() && !recursive) {
+                for (const auto &subdir : update["subdirs"]) {
+                    if (subdir.contains("size_GB")) {
+                        usage_GB -= subdir["size_GB"].get<double>();
+                    }
+                    if (subdir.contains("num_obj")) {
+                        num_obj = subdir["num_obj"].get<int64_t>();
+                    }
+
+                    if (subdir.contains("GB_being_written")) {
+                        GB_being_written = subdir["GB_being_written"].get<double>();
+                    }
+                    if (subdir.contains("objects_being_written")) {
+                        objects_being_written = subdir["objects_being_written"].get<int64_t>();
+                    }
+                }
+                DirUsageUpdate dirUpdate(m_depth + 1, m_current_path);
+                dirUpdate.JSON_math(update["subdirs"]);
+            }
+
+            // For each of the updates contained in the update json, start staging usage updates on per-lot basis
+            if (update.contains("size_GB")) {
+                if (size_updates.find(lot.lot_name) == size_updates.end()) {
+                    size_updates.insert(std::make_pair(lot.lot_name, usage_GB));
+                }
+                else {
+                    size_updates[lot.lot_name] += usage_GB;
+                }
+            }
+            if (update.contains("num_obj")) {
+                if (obj_updates.find(lot.lot_name) == obj_updates.end()) {
+                    obj_updates.insert(std::make_pair(lot.lot_name, num_obj));
+                }
+                else {
+                    obj_updates[lot.lot_name] += num_obj;
+                }
+            }
+            if (update.contains("GB_being_written")) {
+                if (size_writing_updates.find(lot.lot_name) == size_writing_updates.end()) {
+                    size_writing_updates.insert(std::make_pair(lot.lot_name, GB_being_written));
+                }
+                else {
+                    size_writing_updates[lot.lot_name] += GB_being_written;
+                }
+            }
+            if (update.contains("objects_being_written")) {
+                if (obj_writing_updates.find(lot.lot_name) == obj_writing_updates.end()) {
+                    obj_writing_updates.insert(std::make_pair(lot.lot_name, objects_being_written));
+                }
+                else {
+                    obj_writing_updates[lot.lot_name] += objects_being_written;
+                }
+            }
+        }
+
+        // For each of the updates that are staged, perform the update.
+        for (auto &pair : size_updates) {
+            Lot2 lot;
+            lot.init_name(pair.first);
+            auto rp = lot.update_self_usage("self_GB", pair.second);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure to update lot's self_GB: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+        for (auto &pair : obj_updates) {
+            Lot2 lot;
+            lot.init_name(pair.first);
+            auto rp = lot.update_self_usage("self_objects", pair.second);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure to update lot's self_objects: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+        for (auto &pair : size_writing_updates) {
+            Lot2 lot;
+            lot.init_name(pair.first);
+            auto rp = lot.update_self_usage("self_GB_being_written", pair.second);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure to update lot's self_GB_being_written: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+        for (auto &pair : obj_writing_updates) {
+            Lot2 lot;
+            lot.init_name(pair.first);
+            lot.update_self_usage("self_objects_being_written", pair.second);
+            if (!rp.first) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure to update lot's self_objects_being_written: ";
+                return std::make_pair(false, ext_err + int_err);
+            }
+        }
+
+        return std::make_pair(true, "");
+    }
+};
 
 class Context {
   public:
