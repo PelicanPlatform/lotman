@@ -157,12 +157,6 @@ public:
     std::string m_current_path;
     std::string m_parent_prefix;
 
-
-
-
-
-
-
     DirUsageUpdate(): m_depth{0}, m_current_path{}, m_parent_prefix{} {}
     DirUsageUpdate(int depth, std::string path): m_depth{depth}, m_current_path{}, m_parent_prefix{path} {}
 

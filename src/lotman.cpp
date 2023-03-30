@@ -1109,12 +1109,16 @@ int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg) 
 
         auto rp = lotman::Lot2::update_usage_by_dirs(update_JSON);
 
-        std::cout << "In lotman.cpp, rp = " << rp.first << ", " << rp.second;
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failure on call to update_usage_by_dirs: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1; 
+        }
 
-
-        return -1;
-
-
+        return 0;
 
 
     }

@@ -1241,22 +1241,21 @@ BEGIN
 */
 
 std::pair<bool, std::string> lotman::Lot2::update_usage_by_dirs(json update_JSON) {
-    
-    DirUsageUpdate dirUpdate;
-    dirUpdate.JSON_math(update_JSON);
-    
-    
-    
-    
-    
-    
-    return std::make_pair(false, "Under development");
-    
-    
-    
-    
-    
-    
+    try {
+        DirUsageUpdate dirUpdate;
+        auto rp = dirUpdate.JSON_math(update_JSON);
+        if (!rp.first) {
+            std::string int_err = rp.second;
+            std::string ext_err = "Failure on call to JSON_math: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        return std::make_pair(true, "");
+
+    }
+
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
 }
 
 
