@@ -59,12 +59,16 @@ class Lot2 {
         // usage attributes
         struct {
             double self_GB;
+            bool self_GB_update_staged;
             double children_GB;
             int64_t self_objects;
+            bool self_objects_update_staged;
             int64_t children_objects;
             double self_GB_being_written;
+            bool self_GB_being_written_update_staged;
             double children_GB_being_written;
             int64_t self_objects_being_written;
+            bool self_objects_being_written_update_staged;
             int64_t children_objects_being_written;
         } usage;
 
@@ -84,8 +88,7 @@ class Lot2 {
         std::pair<bool, std::string> init_reassignment_policy(const bool assign_LTBR_parent_as_parent_to_orphans, 
                                                               const bool assign_LTBR_parent_as_parent_to_non_orphans,
                                                               const bool assign_policy_to_children);
-        std::pair<bool, std::string> init_self_usage(const json usage_JSON);
-
+        void init_self_usage();
         static std::pair<bool, std::string> lot_exists(std::string lot_name);
         std::pair<bool, std::string> check_if_root();
         std::pair<bool, std::string> store_lot();
@@ -160,12 +163,19 @@ public:
     DirUsageUpdate(): m_depth{0}, m_current_path{}, m_parent_prefix{} {}
     DirUsageUpdate(int depth, std::string path): m_depth{depth}, m_current_path{}, m_parent_prefix{path} {}
 
-    std::pair<bool, std::string> JSON_math(json update_JSON) {
+    std::pair<bool, std::string>JSON_math(json update_JSON, std::vector<Lot2> *return_lots) {
         std::map<std::string, double> size_updates;
         std::map<std::string, int64_t> obj_updates;        
         std::map<std::string, double> size_writing_updates;
         std::map<std::string, int64_t> obj_writing_updates;
+
+
+
+  
+
+        
         for (const auto &update : update_JSON) {
+
             double usage_GB;
             int64_t num_obj;
             double GB_being_written;
@@ -193,6 +203,12 @@ public:
                  m_current_path = m_parent_prefix + path;
             }
 
+
+
+            std::cout << "current path: " << m_current_path << std::endl;
+
+
+
             // Figure out which lot to associate with the dir
             auto rp_vec_str = get_lots_from_dir(m_current_path, false);
             if (!rp_vec_str.second.empty()) { // There was an error
@@ -203,6 +219,9 @@ public:
 
             Lot2 lot;
             lot.init_name(rp_vec_str.first[0]);
+            lot.init_self_usage();
+
+
             // Need a way to check if the path is stored as recursive
             auto rp_json_str = lot.get_lot_dirs(false); // Probably don't need all the dirs unless the plan is to use this more than once...
 
@@ -228,94 +247,102 @@ public:
                         usage_GB -= subdir["size_GB"].get<double>();
                     }
                     if (subdir.contains("num_obj")) {
-                        num_obj = subdir["num_obj"].get<int64_t>();
+                        num_obj -= subdir["num_obj"].get<int64_t>();
                     }
 
                     if (subdir.contains("GB_being_written")) {
-                        GB_being_written = subdir["GB_being_written"].get<double>();
+                        GB_being_written -= subdir["GB_being_written"].get<double>();
                     }
                     if (subdir.contains("objects_being_written")) {
-                        objects_being_written = subdir["objects_being_written"].get<int64_t>();
+                        objects_being_written -= subdir["objects_being_written"].get<int64_t>();
                     }
                 }
                 DirUsageUpdate dirUpdate(m_depth + 1, m_current_path);
-                dirUpdate.JSON_math(update["subdirs"]);
+                dirUpdate.JSON_math(update["subdirs"], return_lots);
             }
 
+
+            std::vector<std::string> lot_update_keys;
             // For each of the updates contained in the update json, start staging usage updates on per-lot basis
             if (update.contains("size_GB")) {
-                if (size_updates.find(lot.lot_name) == size_updates.end()) {
-                    size_updates.insert(std::make_pair(lot.lot_name, usage_GB));
-                }
-                else {
-                    size_updates[lot.lot_name] += usage_GB;
-                }
+                lot.usage.self_GB += usage_GB;
+                lot.usage.self_GB_update_staged = true;
+
+                // if (size_updates.find(lot.lot_name) == size_updates.end()) {
+                //     size_updates.insert(std::make_pair(lot.lot_name, usage_GB));
+                // }
+                // else {
+                //     size_updates[lot.lot_name] += usage_GB;
+                // }
             }
             if (update.contains("num_obj")) {
-                if (obj_updates.find(lot.lot_name) == obj_updates.end()) {
-                    obj_updates.insert(std::make_pair(lot.lot_name, num_obj));
-                }
-                else {
-                    obj_updates[lot.lot_name] += num_obj;
-                }
+                lot.usage.self_objects += num_obj;
+                lot.usage.self_objects_update_staged = true;
+
+                // if (obj_updates.find(lot.lot_name) == obj_updates.end()) {
+                //     obj_updates.insert(std::make_pair(lot.lot_name, num_obj));
+                // }
+                // else {
+                //     obj_updates[lot.lot_name] += num_obj;
+                // }
             }
             if (update.contains("GB_being_written")) {
-                if (size_writing_updates.find(lot.lot_name) == size_writing_updates.end()) {
-                    size_writing_updates.insert(std::make_pair(lot.lot_name, GB_being_written));
-                }
-                else {
-                    size_writing_updates[lot.lot_name] += GB_being_written;
-                }
+                lot.usage.self_GB_being_written += GB_being_written;
+                lot.usage.self_GB_being_written_update_staged = true;
+
+                // if (size_writing_updates.find(lot.lot_name) == size_writing_updates.end()) {
+                //     size_writing_updates.insert(std::make_pair(lot.lot_name, GB_being_written));
+                // }
+                // else {
+                //     size_writing_updates[lot.lot_name] += GB_being_written;
+                // }
             }
             if (update.contains("objects_being_written")) {
-                if (obj_writing_updates.find(lot.lot_name) == obj_writing_updates.end()) {
-                    obj_writing_updates.insert(std::make_pair(lot.lot_name, objects_being_written));
-                }
-                else {
-                    obj_writing_updates[lot.lot_name] += objects_being_written;
-                }
-            }
-        }
+                lot.usage.self_objects_being_written += objects_being_written;
+                lot.usage.self_objects_being_written_update_staged = true;
 
-        // For each of the updates that are staged, perform the update.
-        for (auto &pair : size_updates) {
-            Lot2 lot;
-            lot.init_name(pair.first);
-            auto rp = lot.update_self_usage("self_GB", pair.second);
-            if (!rp.first) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failure to update lot's self_GB: ";
-                return std::make_pair(false, ext_err + int_err);
+                // if (obj_writing_updates.find(lot.lot_name) == obj_writing_updates.end()) {
+                //     obj_writing_updates.insert(std::make_pair(lot.lot_name, objects_being_written));
+                // }
+                // else {
+                //     obj_writing_updates[lot.lot_name] += objects_being_written;
+                // }
             }
-        }
-        for (auto &pair : obj_updates) {
-            Lot2 lot;
-            lot.init_name(pair.first);
-            auto rp = lot.update_self_usage("self_objects", pair.second);
-            if (!rp.first) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failure to update lot's self_objects: ";
-                return std::make_pair(false, ext_err + int_err);
+            
+            // Get a list of the lot names currently in return_lots
+            // the vector of names acts as a proxy for the lots in return_lots
+            std::vector<std::string> return_lot_names;
+            for (auto &return_lot : *return_lots) {
+                return_lot_names.push_back(return_lot.lot_name);
             }
-        }
-        for (auto &pair : size_writing_updates) {
-            Lot2 lot;
-            lot.init_name(pair.first);
-            auto rp = lot.update_self_usage("self_GB_being_written", pair.second);
-            if (!rp.first) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failure to update lot's self_GB_being_written: ";
-                return std::make_pair(false, ext_err + int_err);
+
+            // If the current lot is not in return_lots, add it
+            if (std::find(return_lot_names.begin(), return_lot_names.end(), lot.lot_name) == return_lot_names.end()) {
+                return_lots->push_back(lot);
+
+                std::cout << "Lot not in vec: " << lot.lot_name << ", self_GB: " << lot.usage.self_GB << ", num_obj: " << lot.usage.self_objects << std::endl;
             }
-        }
-        for (auto &pair : obj_writing_updates) {
-            Lot2 lot;
-            lot.init_name(pair.first);
-            auto rp = lot.update_self_usage("self_objects_being_written", pair.second);
-            if (!rp.first) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failure to update lot's self_objects_being_written: ";
-                return std::make_pair(false, ext_err + int_err);
+            // else {
+            //     std::cout << "Lot already in vec: " << lot.lot_name << ", self_GB: " << lot.usage.self_GB << ", num_obj: " << lot.usage.self_objects << std::endl;
+            // }
+            // Else, we need to update the lot in return_lots
+            else {
+                for (auto &return_lot : *return_lots) {
+                    if(return_lot.lot_name == lot.lot_name) { // They should be treated as same obj, so add their values
+                        // std::cout << "updating return lot: " << lot.lot_name << std::endl;
+                        // std::cout << "self_GB, return lot: " << return_lot.usage.self_GB << " lot: " << lot.usage.self_GB << std::endl;
+                        // std::cout << "self_objects, return lot: " << return_lot.usage.self_objects << " lot: " << lot.usage.self_objects << std::endl;
+                        // std::cout << "self_GB_being_written, return lot: " << return_lot.usage.self_GB_being_written << " lot: " << lot.usage.self_GB_being_written << std::endl;
+                        // std::cout << "self_objects_being_written, return lot: " << return_lot.usage.self_objects_being_written << " lot: " << lot.usage.self_objects_being_written << std::endl;
+                        return_lot.usage.self_GB += lot.usage.self_GB;
+                        return_lot.usage.self_objects += lot.usage.self_objects;
+                        return_lot.usage.self_GB_being_written += lot.usage.self_GB_being_written;
+                        return_lot.usage.self_objects_being_written += lot.usage.self_objects_being_written;
+                    
+
+                    }
+                }
+
             }
         }
 

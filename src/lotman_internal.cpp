@@ -85,6 +85,21 @@ std::pair<bool, std::string> lotman::Lot2::init_reassignment_policy(const bool a
 
 }
 
+void lotman::Lot2::init_self_usage() {
+    usage.self_GB = 0;
+    usage.self_GB_update_staged = false;
+    usage.children_GB = 0;
+    usage.self_objects = 0;
+    usage.self_objects_update_staged = false;
+    usage.children_objects = 0;
+    usage.self_GB_being_written = 0;
+    usage.self_GB_being_written_update_staged = false;
+    usage.children_GB_being_written = 0;
+    usage.self_objects_being_written = 0;
+    usage.self_objects_being_written_update_staged = false;
+    usage.children_objects_being_written = 0;
+}
+
 std::pair<bool, std::string> lotman::Lot2::store_lot() {        
         if (!full_lot) {
             return std::make_pair(false, "Lot was not fully initialized");
@@ -1243,12 +1258,65 @@ BEGIN
 std::pair<bool, std::string> lotman::Lot2::update_usage_by_dirs(json update_JSON) {
     try {
         DirUsageUpdate dirUpdate;
-        auto rp = dirUpdate.JSON_math(update_JSON);
+        std::vector<Lot2> return_lots;
+        auto rp = dirUpdate.JSON_math(update_JSON, &return_lots);
         if (!rp.first) {
             std::string int_err = rp.second;
             std::string ext_err = "Failure on call to JSON_math: ";
             return std::make_pair(false, ext_err + int_err);
         }
+
+        for (auto &lot : return_lots) {
+            if (lot.usage.self_GB_update_staged) {
+
+                std::cout << "Lot: " << lot.lot_name << " self_GB update: " << lot.usage.self_GB << std::endl;
+
+                auto rp_bool_str = lot.update_self_usage("self_GB", lot.usage.self_GB);
+                if (!rp_bool_str.first) {
+                    std::string int_err = rp_bool_str.second;
+                    std::string ext_err = "Failure to update lot's self_GB: ";
+                    return std::make_pair(false, ext_err + int_err);
+                }
+
+            }
+
+            if (lot.usage.self_objects_update_staged) {
+
+                std::cout << "Lot: " << lot.lot_name << " self_objects update: " << lot.usage.self_objects << std::endl;
+
+                auto rp_bool_str = lot.update_self_usage("self_objects", lot.usage.self_objects);
+                if (!rp_bool_str.first) {
+                    std::string int_err = rp_bool_str.second;
+                    std::string ext_err = "Failure to update lot's self_GB: ";
+                    return std::make_pair(false, ext_err + int_err);
+                }
+            }
+
+            if (lot.usage.self_GB_being_written_update_staged) {
+
+                std::cout << "Lot: " << lot.lot_name << " self_gb being written update: " << lot.usage.self_GB_being_written << std::endl;
+ 
+                auto rp_bool_str = lot.update_self_usage("self_GB_being_written", lot.usage.self_GB_being_written);
+                if (!rp_bool_str.first) {
+                    std::string int_err = rp_bool_str.second;
+                    std::string ext_err = "Failure to update lot's self_GB: ";
+                    return std::make_pair(false, ext_err + int_err);
+                }
+            }
+
+            if (lot.usage.self_objects_being_written_update_staged) {
+
+                std::cout << "Lot: " << lot.lot_name << " self_objects being written update: " << lot.usage.self_objects_being_written << std::endl;
+ 
+                auto rp_bool_str = lot.update_self_usage("self_objects_being_written", lot.usage.self_objects_being_written);
+                if (!rp_bool_str.first) {
+                    std::string int_err = rp_bool_str.second;
+                    std::string ext_err = "Failure to update lot's self_GB: ";
+                    return std::make_pair(false, ext_err + int_err);
+                }
+            }
+        }
+
         return std::make_pair(true, "");
 
     }
