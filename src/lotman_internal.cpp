@@ -1268,22 +1268,15 @@ std::pair<bool, std::string> lotman::Lot2::update_usage_by_dirs(json update_JSON
 
         for (auto &lot : return_lots) {
             if (lot.usage.self_GB_update_staged) {
-
-                std::cout << "Lot: " << lot.lot_name << " self_GB update: " << lot.usage.self_GB << std::endl;
-
                 auto rp_bool_str = lot.update_self_usage("self_GB", lot.usage.self_GB);
                 if (!rp_bool_str.first) {
                     std::string int_err = rp_bool_str.second;
                     std::string ext_err = "Failure to update lot's self_GB: ";
                     return std::make_pair(false, ext_err + int_err);
                 }
-
             }
 
             if (lot.usage.self_objects_update_staged) {
-
-                std::cout << "Lot: " << lot.lot_name << " self_objects update: " << lot.usage.self_objects << std::endl;
-
                 auto rp_bool_str = lot.update_self_usage("self_objects", lot.usage.self_objects);
                 if (!rp_bool_str.first) {
                     std::string int_err = rp_bool_str.second;
@@ -1292,10 +1285,7 @@ std::pair<bool, std::string> lotman::Lot2::update_usage_by_dirs(json update_JSON
                 }
             }
 
-            if (lot.usage.self_GB_being_written_update_staged) {
-
-                std::cout << "Lot: " << lot.lot_name << " self_gb being written update: " << lot.usage.self_GB_being_written << std::endl;
- 
+            if (lot.usage.self_GB_being_written_update_staged) { 
                 auto rp_bool_str = lot.update_self_usage("self_GB_being_written", lot.usage.self_GB_being_written);
                 if (!rp_bool_str.first) {
                     std::string int_err = rp_bool_str.second;
@@ -1304,10 +1294,7 @@ std::pair<bool, std::string> lotman::Lot2::update_usage_by_dirs(json update_JSON
                 }
             }
 
-            if (lot.usage.self_objects_being_written_update_staged) {
-
-                std::cout << "Lot: " << lot.lot_name << " self_objects being written update: " << lot.usage.self_objects_being_written << std::endl;
- 
+            if (lot.usage.self_objects_being_written_update_staged) { 
                 auto rp_bool_str = lot.update_self_usage("self_objects_being_written", lot.usage.self_objects_being_written);
                 if (!rp_bool_str.first) {
                     std::string int_err = rp_bool_str.second;
@@ -1318,7 +1305,6 @@ std::pair<bool, std::string> lotman::Lot2::update_usage_by_dirs(json update_JSON
         }
 
         return std::make_pair(true, "");
-
     }
 
     catch (std::exception &exc) {
