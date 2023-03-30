@@ -319,7 +319,7 @@ public:
         for (auto &pair : obj_writing_updates) {
             Lot2 lot;
             lot.init_name(pair.first);
-            lot.update_self_usage("self_objects_being_written", pair.second);
+            auto rp = lot.update_self_usage("self_objects_being_written", pair.second);
             if (!rp.first) {
                 std::string int_err = rp.second;
                 std::string ext_err = "Failure to update lot's self_objects_being_written: ";
