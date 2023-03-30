@@ -161,11 +161,13 @@ public:
     DirUsageUpdate(int depth, std::string path): m_depth{depth}, m_current_path{}, m_parent_prefix{path} {}
 
     std::pair<bool, std::string> JSON_math(json update_JSON) {
+        std::cout << "in JSON math" << std::endl;
         std::map<std::string, double> size_updates;
         std::map<std::string, int64_t> obj_updates;        
         std::map<std::string, double> size_writing_updates;
         std::map<std::string, int64_t> obj_writing_updates;
         for (const auto &update : update_JSON) {
+            std::cout << "Iterating through updates" << std::endl;
             double usage_GB;
             int64_t num_obj;
             double GB_being_written;
@@ -194,6 +196,7 @@ public:
             }
 
             // Figure out which lot to associate with the dir
+            std::cout << "getting lots from dir" << std::endl;
             auto rp_vec_str = get_lots_from_dir(m_current_path, false);
             if (!rp_vec_str.second.empty()) { // There was an error
                 std::string int_err = rp_vec_str.second;
@@ -208,6 +211,10 @@ public:
             lot.init_name(rp_vec_str.first[0]);
             // Need a way to check if the path is stored as recursive
             auto rp_json_str = lot.get_lot_dirs(false); // Probably don't need all the dirs unless the plan is to use this more than once...
+
+            std::cout << "checking lot dir recursiveness" << std::endl;
+
+
             if (!rp_json_str.second.empty()) { // There was an error
                 std::string int_err = rp_json_str.second;
                 std::string ext_err = "Failure on call to get_lots_from_dir: ";
@@ -216,7 +223,7 @@ public:
 
             json lot_dirs_json = rp_json_str.first;
             bool recursive;
-            if (!lot_dirs_json[m_current_path]["recursive"].is_null()) {
+            if (lot_dirs_json.contains(m_current_path)) {
                 recursive = lot_dirs_json[m_current_path]["recursive"].get<bool>();
             }
             else {
@@ -224,6 +231,7 @@ public:
             }            
             
             // If the dir includes values from subdirs and it is not recursive, we need to subtract subdir usage per attribute
+            std::cout << "starting to subtract subdir usage" << std::endl;
             if (update["includes_subdirs"].get<bool>() && !recursive) {
                 for (const auto &subdir : update["subdirs"]) {
                     if (subdir.contains("size_GB")) {
@@ -245,6 +253,7 @@ public:
             }
 
             // For each of the updates contained in the update json, start staging usage updates on per-lot basis
+            std::cout << "staging updates" << std::endl;
             if (update.contains("size_GB")) {
                 if (size_updates.find(lot.lot_name) == size_updates.end()) {
                     size_updates.insert(std::make_pair(lot.lot_name, usage_GB));
@@ -280,6 +289,7 @@ public:
         }
 
         // For each of the updates that are staged, perform the update.
+        std::cout << "starting to perform staged updates" << std::endl;
         for (auto &pair : size_updates) {
             Lot2 lot;
             lot.init_name(pair.first);
