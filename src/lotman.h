@@ -52,7 +52,7 @@ int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg);
 
 
 void lotman_free_string_list(char **str_list);
-int lotman_check_db_health(char **err_msg);
+//int lotman_check_db_health(char **err_msg); // Should eventually check that data structure conforms to expectations. If there's a cycle or a non-self-parent root, something is wrong
 int lotman_get_lots_past_exp(const bool recursive, char ***output, char **err_msg);
 int lotman_get_lots_past_del(const bool recursive, char ***output, char **err_msg);
 int lotman_get_lots_past_opp(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg);
@@ -63,7 +63,6 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
 int lotman_get_lots_from_dir(const char *dir, const bool recursive, char ***output, char **err_msg);
 
 //int lotman_get_matching_lots(const char *criteria_JSON, char ***output, char **err_msg);
-int lotman_get_lot_obj(const char *lot_JSON_str, char **output, char **err_msg);
 
 
 

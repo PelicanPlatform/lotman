@@ -1,13 +1,13 @@
-
-#include <iostream> //DELETE
 #include <string.h>
 #include <nlohmann/json.hpp>
+#include <nlohmann/json-schema.hpp>
 
 #include "lotman.h"
 #include "lotman_internal.h"
 #include "lotman_version.h"
+#include "schemas.h"
 
-//ss
+
 /*
 Initialize context -- Default is empty
 */
@@ -19,21 +19,24 @@ using json = nlohmann::json;
 const char * lotman_version() {
     std::string major = std::to_string(Lotman_VERSION_MAJOR);
     std::string minor = std::to_string(Lotman_VERSION_MINOR);
-    static std::string version = major+"."+minor;
+    std::string patch = std::to_string(Lotman_VERSION_PATCH);
+    static std::string version = "v"+major+"."+minor+"."+patch;
 
     return version.c_str();
 }
 
 int lotman_add_lot(const char *lotman_JSON_str, 
                    char **err_msg) {
-    // TODO: Check for context and figure out what to do with it
-    // TODO: Create JSON schema and verify JSON input before calling functions that rely on specific structures.
-
     try {
         json lot_JSON_obj = json::parse(lotman_JSON_str);
 
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::new_lot_schema);
+        validator.validate(lot_JSON_obj);
+
         // Data checks
-        auto rp = lotman::Lot2::lot_exists("default");
+        auto rp = lotman::Lot::lot_exists("default");
         if (!rp.first && lot_JSON_obj["lot_name"] != "default") {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
@@ -41,24 +44,15 @@ int lotman_add_lot(const char *lotman_JSON_str,
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             }
             return -1;
         }
 
-        // Verify lot name is provided
-        if (lot_JSON_obj["lot_name"].is_null()) {
-            if (err_msg) {
-                std::string err = "Could not determine lot_name.";
-                *err_msg = strdup(err.c_str());
-            }
-            return -1; 
-        }
-
         // Make sure lot doesn't already exist
-        rp = lotman::Lot2::lot_exists(lot_JSON_obj["lot_name"]);
+        rp = lotman::Lot::lot_exists(lot_JSON_obj["lot_name"]);
         if (rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot already exists
@@ -66,31 +60,14 @@ int lotman_add_lot(const char *lotman_JSON_str,
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             return -1;
             }
         }
 
-        // Make sure there's at least one parent
-        if (lot_JSON_obj["parents"].get<std::vector<std::string>>().size() == 0) {
-            if (err_msg) {
-                *err_msg = strdup("The provided lot has no parents.");
-            }
-            return -1;
-        }
-
-        lotman::Lot2 lot;
-        rp = lot.init_full(lot_JSON_obj);
-        if (!rp.first){
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failed to initialize the lot from JSON: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1;
-        }
+        lotman::Lot lot(lot_JSON_obj);
 
         // Check for context and make sure caller is allowed to add the lot as specified
         rp = lot.check_context_for_parents(lot.parents, false, true);
@@ -138,9 +115,8 @@ int lotman_remove_lot(const char *lot_name,
                       const bool assign_policy_to_children,
                       const bool override_policy,
                       char **err_msg) {
-    // TODO: Check for context and figure out what to do with it
     try {
-        auto rp = lotman::Lot2::lot_exists(lot_name);
+        auto rp = lotman::Lot::lot_exists(lot_name);
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
@@ -148,23 +124,14 @@ int lotman_remove_lot(const char *lot_name,
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             return -1;
             }
         }
 
-        lotman::Lot2 lot;
-        rp = lot.init_name(lot_name);
-        if (!rp.first) {
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Function call to init_name failed: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1;
-        }
+        lotman::Lot lot(lot_name);
 
         // To destroy a lot, caller must own the lot (not just the contents of the lot)
         // This implies caller owns a parent of the the lot.
@@ -243,10 +210,9 @@ int lotman_remove_lot(const char *lot_name,
     }
 }
 
-
 int lotman_remove_lots_recursive(const char *lot_name, char **err_msg) {
     try {
-        auto rp = lotman::Lot2::lot_exists(lot_name);
+        auto rp = lotman::Lot::lot_exists(lot_name);
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
@@ -254,23 +220,14 @@ int lotman_remove_lots_recursive(const char *lot_name, char **err_msg) {
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             return -1;
             }
         }
 
-        lotman::Lot2 lot;
-        rp = lot.init_name(lot_name);
-        if (!rp.first) {
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Function call to init_name failed: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1;
-        }
+        lotman::Lot lot(lot_name);
 
         // To destroy a lot, caller must own the lot (not just the contents of the lot)
         // This implies caller owns a parent of the the lot.
@@ -305,51 +262,18 @@ int lotman_remove_lots_recursive(const char *lot_name, char **err_msg) {
 
 }
 
-
-
-
 int lotman_update_lot(const char *lotman_JSON_str, 
                       char **err_msg) {
     try {
         json update_JSON_obj = json::parse(lotman_JSON_str);
 
-        std::array<std::string, 5> known_keys = {"lot_name", "owner", "parents", "paths", "management_policy_attrs"};
-        std::array<std::string, 6> known_mpa_keys = {"dedicated_GB", "opportunistic_GB", "max_num_objects", "creation_time", "expiration_time", "deletion_time"};
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::lot_update_schema);
+        validator.validate(update_JSON_obj);
 
-        // Check that all the update keys are known.
-        auto keys_iter = update_JSON_obj.begin();
-        for (const auto &key : update_JSON_obj.items()) {
-            if (std::find(known_keys.begin(), known_keys.end(), key.key()) == known_keys.end()) {
-                if (err_msg) {
-                    std::string err = "The key \"" + key.key() + "\" is not recognized. Is there a typo?";
-                    *err_msg = strdup(err.c_str());
-                }
-                return -1;
-            }
-
-            if (key.key() == "management_policy_attrs") {
-                for (const auto &mpa : key.value().items()) {
-                    if (std::find(known_mpa_keys.begin(), known_mpa_keys.end(), mpa.key()) == known_mpa_keys.end()) {
-                        if (err_msg) {
-                            std::string err = "The management policy attribute key \"" + mpa.key() + "\" is not recognized. Is there a typo?";
-                            *err_msg = strdup(err.c_str());
-                        }
-                        return -1;
-                    }
-                }
-            }
-        }
-
-        // Make sure the lot_name is defined
-        if (update_JSON_obj["lot_name"].is_null()) {
-            if (err_msg) {
-                std::string err = "Could not determine lot_name.";
-                *err_msg = strdup(err.c_str());
-            }
-            return -1; 
-        }
         // Check that lot exists
-        auto rp = lotman::Lot2::lot_exists(update_JSON_obj["lot_name"]);
+        auto rp = lotman::Lot::lot_exists(update_JSON_obj["lot_name"]);
         if (!rp.first) {
             if (err_msg) {
                 if (!rp.second.empty()) { // There was an error
@@ -365,16 +289,7 @@ int lotman_update_lot(const char *lotman_JSON_str,
             return -1; 
         }
 
-        lotman::Lot2 lot;
-        rp = lot.init_name(update_JSON_obj["lot_name"]);
-        if (!rp.first) {
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failed to initialize lot name: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1; 
-        }
+        lotman::Lot lot(update_JSON_obj["lot_name"].get<std::string>());
 
         //Check for context
         lot.get_parents(true, true);
@@ -389,7 +304,7 @@ int lotman_update_lot(const char *lotman_JSON_str,
         }
 
         // Start checking which keys to operate on
-        if (!update_JSON_obj["owner"].is_null()) {
+        if (update_JSON_obj.contains("owner")) {
             rp = lot.update_owner(update_JSON_obj["owner"].get<std::string>());
             if (!rp.first) {
                 if (err_msg) {
@@ -401,17 +316,8 @@ int lotman_update_lot(const char *lotman_JSON_str,
             }
         }
 
-        if (!update_JSON_obj["parents"].is_null()) {
-            // Create update map from the update JSON -- Probably a way to improve this
-            std::map<std::string, std::string> update_map;
-            for (const auto &obj : update_JSON_obj["parents"]) {
-                for (const auto &pair : obj.items()) {
-                    std::pair<std::string, std::string> map_element = std::make_pair(pair.key(), pair.value());
-                    update_map.insert(map_element);
-                }
-            }
-
-            rp = lot.update_parents(update_map);
+        if (update_JSON_obj.contains("parents")) {
+            rp = lot.update_parents(update_JSON_obj["parents"]);
             if (!rp.first) {
                 if (err_msg) {
                     std::string int_err = rp.second;
@@ -422,17 +328,8 @@ int lotman_update_lot(const char *lotman_JSON_str,
             }
         }
 
-        if (!update_JSON_obj["paths"].is_null()) {
-            // Create update map from the update JSON
-            std::map<std::string, json> update_map;
-            for (const auto &path_update_obj : update_JSON_obj["paths"]) {
-                for (const auto &pair : path_update_obj.items()) {
-                    std::pair<std::string, json> map_element = std::make_pair(pair.key(), pair.value());
-                    update_map.insert(map_element);
-                }
-            }
-
-            rp = lot.update_paths(update_map);
+        if (update_JSON_obj.contains("paths")) {
+            rp = lot.update_paths(update_JSON_obj["paths"]);
             if (!rp.first) {
                 if (err_msg) {
                     std::string int_err = rp.second;
@@ -443,7 +340,7 @@ int lotman_update_lot(const char *lotman_JSON_str,
             }
         }
             
-        if (!update_JSON_obj["management_policy_attrs"].is_null()) {
+        if (update_JSON_obj.contains("management_policy_attrs")) {
             for (const auto &update_attr : update_JSON_obj["management_policy_attrs"].items()) {
                 auto rp = lot.update_man_policy_attrs(update_attr.key(), update_attr.value());
                 if (!rp.first) {
@@ -471,30 +368,13 @@ int lotman_add_to_lot(const char *lotman_JSON_str, char **err_msg) {
     try {    
         json addition_obj = json::parse(lotman_JSON_str);
 
-        std::array<std::string, 3> known_keys = {"lot_name", "parents", "paths"};
-
-        // Check for known/unknown keys
-        auto keys_iter = addition_obj.begin();
-        for (const auto &key : addition_obj.items()) {
-            if (std::find(known_keys.begin(), known_keys.end(), key.key()) == known_keys.end()) {
-                if (err_msg) {
-                    std::string err = "The key \"" + key.key() + "\" is not recognized. Is there a typo?";
-                    *err_msg = strdup(err.c_str());
-                }
-                return -1;
-            }
-        }
-
-        if (addition_obj["lot_name"].is_null()) {
-            if (err_msg) {
-                std::string err = "Could not determine lot_name.";
-                *err_msg = strdup(err.c_str());
-            }
-            return -1; 
-        }
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::lot_additions_schema);
+        validator.validate(addition_obj);
 
         // Assert lot exists
-        auto rp = lotman::Lot2::lot_exists(addition_obj["lot_name"]);
+        auto rp = lotman::Lot::lot_exists(addition_obj["lot_name"]);
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
@@ -502,23 +382,14 @@ int lotman_add_to_lot(const char *lotman_JSON_str, char **err_msg) {
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             return -1;
             }
         }
 
-        lotman::Lot2 lot;
-        rp = lot.init_name(addition_obj["lot_name"]);
-        if (!rp.first) {
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failed to initialize lot name: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1; 
-        }
+        lotman::Lot lot(addition_obj["lot_name"].get<std::string>());
 
         //Check for context
         lot.get_parents(true, true);
@@ -533,11 +404,10 @@ int lotman_add_to_lot(const char *lotman_JSON_str, char **err_msg) {
         }
 
         // Start checking which keys to operate on
-        if (!addition_obj["parents"].is_null()) {
-            std::vector<lotman::Lot2> parent_lots;
+        if (addition_obj.contains("parents")) {
+            std::vector<lotman::Lot> parent_lots;
             for (const auto &parent_name : addition_obj["parents"]) {
-                lotman::Lot2 parent_lot;
-                parent_lot.init_name(parent_name);
+                lotman::Lot parent_lot(parent_name.get<std::string>());
                 parent_lots.push_back(parent_lot);
             }
 
@@ -553,7 +423,7 @@ int lotman_add_to_lot(const char *lotman_JSON_str, char **err_msg) {
 
         }
 
-        if (!addition_obj["paths"].is_null()) {
+        if (addition_obj.contains("paths")) {
             rp = lot.add_paths(addition_obj["paths"]);
             if (!rp.first) {
                 if (err_msg) {
@@ -582,7 +452,7 @@ int lotman_is_root(const char *lot_name, char **err_msg) {
     }
     
     try {
-        auto rp = lotman::Lot2::lot_exists(lot_name);
+        auto rp = lotman::Lot::lot_exists(lot_name);
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
@@ -590,15 +460,14 @@ int lotman_is_root(const char *lot_name, char **err_msg) {
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             }
             return -1;
         }
 
-        lotman::Lot2 lot;
-        lot.init_name(lot_name);
+        lotman::Lot lot(lot_name);
         rp = lot.check_if_root();
         if (rp.second.empty()) {
             return rp.first;
@@ -606,7 +475,7 @@ int lotman_is_root(const char *lot_name, char **err_msg) {
         else { // There was an error
             if (err_msg) {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::check_if_root failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::check_if_root failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
             }
             return -1;
@@ -628,13 +497,13 @@ int lotman_lot_exists(const char *lot_name,
     }
 
     try {
-        auto rp = lotman::Lot2::lot_exists(lot_name);
+        auto rp = lotman::Lot::lot_exists(lot_name);
         if (rp.second.empty()) { //no error message indicates success --> will change when inner function can handle error propagation
             return rp.first;
         }
         else {
             std::string int_err = rp.second;
-            std::string ext_err = "Call to lotman::Lot2::lot_exists failed: ";
+            std::string ext_err = "Call to lotman::Lot::lot_exists failed: ";
             if (err_msg) {
                 *err_msg = strdup((ext_err + int_err).c_str());
             }
@@ -649,7 +518,6 @@ int lotman_lot_exists(const char *lot_name,
     }
 }
     
-
 int lotman_get_owners(const char *lot_name, 
                       const bool recursive,
                       char ***output,
@@ -660,7 +528,7 @@ int lotman_get_owners(const char *lot_name,
     }
 
     try {
-        auto rp_bool_str = lotman::Lot2::lot_exists(lot_name);    
+        auto rp_bool_str = lotman::Lot::lot_exists(lot_name);    
         if (!rp_bool_str.first) {
             if (err_msg) {
                 if (rp_bool_str.second.empty()) { // function worked, but lot does not exist
@@ -668,20 +536,19 @@ int lotman_get_owners(const char *lot_name,
                 }
                 else {
                     std::string int_err = rp_bool_str.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             }
             return -1;
         }
         
-        lotman::Lot2 lot;
-        lot.init_name(lot_name);
+        lotman::Lot lot(lot_name);
         auto rp_vec_str = lot.get_owners(recursive);
         if (!rp_vec_str.second.empty()) { // There was an error
             if (err_msg) {
                 std::string int_err = rp_vec_str.second;
-                std::string ext_err = "Function call to lotman::Lot2::get_owners failed: ";
+                std::string ext_err = "Function call to lotman::Lot::get_owners failed: ";
                 *err_msg = strdup((ext_err + int_err).c_str());
             }
             return -1;
@@ -732,7 +599,7 @@ int lotman_get_parent_names(const char *lot_name,
     }
 
     try {
-        auto rp_bool_str = lotman::Lot2::lot_exists(lot_name);    
+        auto rp_bool_str = lotman::Lot::lot_exists(lot_name);    
         if (!rp_bool_str.first) {
             if (err_msg) {
                 if (rp_bool_str.second.empty()) { // function worked, but lot does not exist
@@ -740,27 +607,26 @@ int lotman_get_parent_names(const char *lot_name,
                 }
                 else {
                     std::string int_err = rp_bool_str.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             }
             return -1;
         }
 
-        lotman::Lot2 lot;
-        lot.init_name(lot_name);
+        lotman::Lot lot(lot_name);
 
         auto rp_vec_str = lot.get_parents(recursive, get_self);
         if (!rp_vec_str.second.empty()) { // There was an error
             if (err_msg) {
                 std::string int_err = rp_vec_str.second;
-                std::string ext_err = "Function call to lotman::Lot2::get_parents failed: ";
+                std::string ext_err = "Function call to lotman::Lot::get_parents failed: ";
                 *err_msg = strdup((ext_err + int_err).c_str());
             }
             return -1;
         }
 
-        std::vector<lotman::Lot2> parents = rp_vec_str.first;
+        std::vector<lotman::Lot> parents = rp_vec_str.first;
         std::vector<std::string> parents_list;
         for (const auto &parent : parents) {
             parents_list.push_back(parent.lot_name);
@@ -801,7 +667,7 @@ int lotman_get_children_names(const char *lot_name,
     }
 
     try {
-        auto rp_bool_str = lotman::Lot2::lot_exists(lot_name);    
+        auto rp_bool_str = lotman::Lot::lot_exists(lot_name);    
         if (!rp_bool_str.first) {
             if (err_msg) {
                 if (rp_bool_str.second.empty()) { // function worked, but lot does not exist
@@ -809,27 +675,26 @@ int lotman_get_children_names(const char *lot_name,
                 }
                 else {
                     std::string int_err = rp_bool_str.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             }
             return -1;
         }
 
-        lotman::Lot2 lot;
-        lot.init_name(lot_name);
+        lotman::Lot lot(lot_name);
 
         auto rp_vec_str = lot.get_children(recursive, get_self);
         if (!rp_vec_str.second.empty()) { // There was an error
             if (err_msg) {
                 std::string int_err = rp_vec_str.second;
-                std::string ext_err = "Function call to lotman::Lot2::get_children failed: ";
+                std::string ext_err = "Function call to lotman::Lot::get_children failed: ";
                 *err_msg = strdup((ext_err + int_err).c_str());
             }
             return -1;
         }
 
-        std::vector<lotman::Lot2> children = rp_vec_str.first;
+        std::vector<lotman::Lot> children = rp_vec_str.first;
         std::vector<std::string> children_list;
         for (const auto &child : children) {
             children_list.push_back(child.lot_name);
@@ -864,30 +729,14 @@ int lotman_get_policy_attributes(const char *policy_attributes_JSON_str,
                                  char **err_msg) {
     try {
         json get_attrs_obj = json::parse(policy_attributes_JSON_str);
-        std::array<std::string, 7> known_keys = {"lot_name", "dedicated_GB", "opportunistic_GB", "max_num_objects", "creation_time", "expiration_time", "deletion_time"};
 
-        // Check for known/unknown keys
-        auto keys_iter = get_attrs_obj.begin();
-        for (const auto &key : get_attrs_obj.items()) {
-            if (std::find(known_keys.begin(), known_keys.end(), key.key()) == known_keys.end()) {
-                if (err_msg) {
-                    std::string err = "The key \"" + key.key() + "\" is not recognized. Is there a typo?";
-                    *err_msg = strdup(err.c_str());
-                }
-                return -1;
-            }
-        }
-
-        if (get_attrs_obj["lot_name"].is_null()) {
-            if (err_msg) {
-                std::string err = "Could not determine lot_name.";
-                *err_msg = strdup(err.c_str());
-            }
-            return -1; 
-        }
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::get_policy_attrs_schema);
+        validator.validate(get_attrs_obj);
 
         // Assert lot exists
-        auto rp = lotman::Lot2::lot_exists(get_attrs_obj["lot_name"]);
+        auto rp = lotman::Lot::lot_exists(get_attrs_obj["lot_name"]);
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
@@ -895,23 +744,14 @@ int lotman_get_policy_attributes(const char *policy_attributes_JSON_str,
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             return -1;
             }
         }
 
-        lotman::Lot2 lot;
-        rp = lot.init_name(get_attrs_obj["lot_name"]);
-        if (!rp.first) {
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failed to initialize lot name: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1; 
-        }
+        lotman::Lot lot(get_attrs_obj["lot_name"].get<std::string>());
 
         json output_obj;
         for (const auto &pair : get_attrs_obj.items()) {
@@ -953,7 +793,7 @@ int lotman_get_lot_dirs(const char *lot_name,
     }
 
     try {
-        auto rp = lotman::Lot2::lot_exists(lot_name);
+        auto rp = lotman::Lot::lot_exists(lot_name);
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
@@ -961,23 +801,14 @@ int lotman_get_lot_dirs(const char *lot_name,
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             return -1;
             }
         }
 
-        lotman::Lot2 lot;
-        rp = lot.init_name(lot_name);
-        if (!rp.first) {
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failed to initialize lot name: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1; 
-        }
+        lotman::Lot lot(lot_name);
 
         json output_obj;
         auto rp_json_str = lot.get_lot_dirs(recursive);
@@ -1007,33 +838,15 @@ int lotman_get_lot_dirs(const char *lot_name,
 
 int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
     try {
-        
         json update_usage_JSON = json::parse(update_JSON_str);
-        std::array<std::string, 5> known_keys = {"lot_name", "self_GB", "self_GB_being_written", "self_objects", "self_objects_being_written"};
 
-        // Check for known/unknown keys
-        auto keys_iter = update_usage_JSON.begin();
-        for (const auto &key : update_usage_JSON.items()) {
-            if (std::find(known_keys.begin(), known_keys.end(), key.key()) == known_keys.end()) {
-                if (err_msg) {
-                    std::string err = "The key \"" + key.key() + "\" is not recognized. Is there a typo?";
-                    *err_msg = strdup(err.c_str());
-                }
-                return -1;
-            }
-        }
-
-        // Verify lot name is provided
-        if (update_usage_JSON["lot_name"].is_null()) {
-            if (err_msg) {
-                std::string err = "Could not determine lot_name.";
-                *err_msg = strdup(err.c_str());
-            }
-            return -1; 
-        }
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::update_usage_schema);
+        validator.validate(update_usage_JSON);
 
         // Assert lot exists
-        auto rp = lotman::Lot2::lot_exists(update_usage_JSON["lot_name"]);
+        auto rp = lotman::Lot::lot_exists(update_usage_JSON["lot_name"]);
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
@@ -1041,23 +854,14 @@ int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             return -1;
             }
         }
 
-        lotman::Lot2 lot;
-        rp = lot.init_name(update_usage_JSON["lot_name"]);
-        if (!rp.first) {
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failed to initialize lot name: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1; 
-        }
+        lotman::Lot lot(update_usage_JSON["lot_name"].get<std::string>());
 
         //Check for context
         lot.get_parents(true, true);
@@ -1100,14 +904,19 @@ int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
 
 int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg) {
     try {
-        if (!update_JSON_str) {
-            if (err_msg) {*err_msg = strdup("Update JSON must not be null.");}
-            return -1;
-        }
-
         json update_JSON = json::parse(update_JSON_str);
 
-        auto rp = lotman::Lot2::update_usage_by_dirs(update_JSON);
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::update_usage_by_dir_schema);
+
+        // Current schema only works to validate each update obj.
+        // Eventually, the schema should be updated to correctly work on the whole array
+        for (const auto &update : update_JSON) {
+            validator.validate(update);
+        }
+        
+        auto rp = lotman::Lot::update_usage_by_dirs(update_JSON);
 
         if (!rp.first) {
             if (err_msg) {
@@ -1119,8 +928,6 @@ int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg) 
         }
 
         return 0;
-
-
     }
     catch (std::exception &exc) {
         if (err_msg) {
@@ -1130,76 +937,33 @@ int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg) 
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 int lotman_get_lot_usage(const char *usage_attributes_JSON_str, char **output, char **err_msg) {  
     try {
         json get_usage_obj = json::parse(usage_attributes_JSON_str);
-        std::array<std::string, 7> known_keys = {"lot_name", "dedicated_GB", "opportunistic_GB", "total_GB", "num_objects", "GB_being_written", "obj_being_written"};
 
-        // Check for known/unknown keys
-        auto keys_iter = get_usage_obj.begin();
-        for (const auto &key : get_usage_obj.items()) {
-            if (std::find(known_keys.begin(), known_keys.end(), key.key()) == known_keys.end()) {
-                if (err_msg) {
-                    std::string err = "The key \"" + key.key() + "\" is not recognized. Is there a typo?";
-                    *err_msg = strdup(err.c_str());
-                }
-                return -1;
-            }
-        }
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::get_usage_schema);
+        validator.validate(get_usage_obj);
 
-        // Verify lot name is provided
-        if (get_usage_obj["lot_name"].is_null()) {
-            if (err_msg) {
-                std::string err = "Could not determine lot_name.";
-                *err_msg = strdup(err.c_str());
-            }
-            return -1; 
-        }
 
         // Assert lot exists
-        auto rp = lotman::Lot2::lot_exists(get_usage_obj["lot_name"]);
+        auto rp = lotman::Lot::lot_exists(get_usage_obj["lot_name"]);
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
-                    *err_msg = strdup("That was easy! The lot does not exist, so nothing can be added to it.");
+                    *err_msg = strdup("That was easy! The lot does not exist, so nothing can be added to it. My work is done here.");
                 }
                 else {
                     std::string int_err = rp.second;
-                    std::string ext_err = "Function call to lotman::Lot2::lot_exists failed: ";
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
                     *err_msg = strdup((ext_err + int_err).c_str());
                 }            
             return -1;
             }
         }
 
-        lotman::Lot2 lot;
-        rp = lot.init_name(get_usage_obj["lot_name"]);
-        if (!rp.first) {
-            if (err_msg) {
-                std::string int_err = rp.second;
-                std::string ext_err = "Failed to initialize lot name: ";
-                *err_msg = strdup((ext_err + int_err).c_str());
-            }
-            return -1; 
-        }
+        lotman::Lot lot(get_usage_obj["lot_name"].get<std::string>());
 
         json output_obj;
         for (const auto &pair : get_usage_obj.items()) {
@@ -1233,9 +997,11 @@ int lotman_get_lot_usage(const char *usage_attributes_JSON_str, char **output, c
 }
 
 int lotman_check_db_health(char **err_msg) {
-    return false;
+    if (err_msg) {
+        *err_msg = strdup("This function is not yet implemented...");
+    }
+    return -1;
 }
-
 
 int lotman_set_context(const char *key, const char *value, char **err_msg) {
     try {
@@ -1269,7 +1035,7 @@ int lotman_set_context(const char *key, const char *value, char **err_msg) {
 
 int lotman_get_lots_past_exp(const bool recursive, char ***output, char **err_msg) {
     try {
-        auto rp = lotman::Lot2::get_lots_past_exp(recursive);
+        auto rp = lotman::Lot::get_lots_past_exp(recursive);
         if (!rp.second.empty()) {
             if (err_msg) {
                 std::string int_err = rp.second;
@@ -1307,7 +1073,7 @@ int lotman_get_lots_past_exp(const bool recursive, char ***output, char **err_ms
 
 int lotman_get_lots_past_del(const bool recursive, char ***output, char **err_msg) {
     try {
-        auto rp = lotman::Lot2::get_lots_past_del(recursive);
+        auto rp = lotman::Lot::get_lots_past_del(recursive);
         if (!rp.second.empty()) {
             if (err_msg) {
                 std::string int_err = rp.second;
@@ -1346,7 +1112,7 @@ int lotman_get_lots_past_del(const bool recursive, char ***output, char **err_ms
 
 int lotman_get_lots_past_opp(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
     try {
-        auto rp = lotman::Lot2::get_lots_past_opp(recursive_quota, recursive_children);
+        auto rp = lotman::Lot::get_lots_past_opp(recursive_quota, recursive_children);
         if (!rp.second.empty()) {
             if (err_msg) {
                 std::string int_err = rp.second;
@@ -1385,7 +1151,7 @@ int lotman_get_lots_past_opp(const bool recursive_quota, const bool recursive_ch
 
 int lotman_get_lots_past_ded(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
     try {
-        auto rp = lotman::Lot2::get_lots_past_ded(recursive_quota, recursive_children);
+        auto rp = lotman::Lot::get_lots_past_ded(recursive_quota, recursive_children);
         if (!rp.second.empty()) {
             if (err_msg) {
                 std::string int_err = rp.second;
@@ -1424,7 +1190,7 @@ int lotman_get_lots_past_ded(const bool recursive_quota, const bool recursive_ch
 
 int lotman_get_lots_past_obj(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
     try {
-        auto rp = lotman::Lot2::get_lots_past_obj(recursive_quota, recursive_children);
+        auto rp = lotman::Lot::get_lots_past_obj(recursive_quota, recursive_children);
         if (!rp.second.empty()) {
             if (err_msg) {
                 std::string int_err = rp.second;
@@ -1461,12 +1227,9 @@ int lotman_get_lots_past_obj(const bool recursive_quota, const bool recursive_ch
     }
 }
 
-
-
-
 int lotman_list_all_lots(char ***output, char **err_msg) {
     try {
-        auto rp = lotman::Lot2::list_all_lots();
+        auto rp = lotman::Lot::list_all_lots();
         if (!rp.second.empty()) { // There was an error
             if (err_msg) {
                 std::string int_err = rp.second;
@@ -1511,11 +1274,9 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
             return -1;
         }
 
-        lotman::Lot2 lot;
-        lot.init_name(lot_name);
+        lotman::Lot lot(lot_name);
 
         json output_obj;
-
         // Start populating fields in output_obj
 
         // Add name
@@ -1540,7 +1301,7 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
         }
         
         // Add parents according to recursive flag
-        std::pair<std::vector<lotman::Lot2>, std::string> rp_lotvec_str;
+        std::pair<std::vector<lotman::Lot>, std::string> rp_lotvec_str;
         rp_lotvec_str = lot.get_parents(recursive, true);
         if (!rp_lotvec_str.second.empty()) { // There was an error
             if (err_msg) {
@@ -1638,7 +1399,7 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
 int lotman_get_lots_from_dir(const char *dir, const bool recursive, char ***output, char **err_msg) {
     try {
 
-        auto rp = lotman::Lot2::get_lots_from_dir(dir, recursive);
+        auto rp = lotman::Lot::get_lots_from_dir(dir, recursive);
         if (!rp.second.empty()) { // There was an error
             if (err_msg) {
                 std::string int_err = rp.second;
@@ -1675,6 +1436,12 @@ int lotman_get_lots_from_dir(const char *dir, const bool recursive, char ***outp
     }
 }
 
+
+/*
+Some old stuff that provided a type of query language to get lots that matched a set of criteria.
+We decided this wasn't really something we wanted to expose, but on the off chance some pieces of
+it wind up being usefull in the future, I'm going to leave it here. 
+*/
 
 //int lotman_get_matching_lots(const char *criteria_JSON_str, 
 //                             char ***output, 
