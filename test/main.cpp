@@ -133,8 +133,9 @@ namespace {
         rv = lotman_update_lot(modified_lot2, &err_msg);
         ASSERT_FALSE(rv == 0);
 
+        char *err_msg2;
         char **owner_out;
-        rv = lotman_get_owners("lot3", false, &owner_out, &err_msg);
+        rv = lotman_get_owners("lot3", false, &owner_out, &err_msg2);
         ASSERT_TRUE(rv == 0) << err_msg;
         
         bool check_old = false, check_new =  false;
@@ -150,7 +151,7 @@ namespace {
         lotman_free_string_list(owner_out);
 
         char **parents_out;
-        rv = lotman_get_parent_names("lot3", false, true, &parents_out, &err_msg);
+        rv = lotman_get_parent_names("lot3", false, true, &parents_out, &err_msg2);
         ASSERT_TRUE(rv == 0) << err_msg;
 
         check_old = false, check_new = false;
@@ -171,8 +172,25 @@ namespace {
 
         // Try to add a cycle --> this should fail
         const char *addition_JSON2 = "{ \"lot_name\": \"lot1\", \"parents\": [\"lot2\"]}";
-        rv = lotman_add_to_lot(addition_JSON2, &err_msg);
+        rv = lotman_add_to_lot(addition_JSON2, &err_msg2);
         ASSERT_FALSE(rv == 0);
+
+        // Test removing parents/paths from lots
+        // Add default as parent to sep_node, then remove
+        char *err_msg3;
+        const char *addition_JSON3 = "{\"lot_name\":\"sep_node\", \"paths\":[{\"path\":\"/here/is/a/path\", \"recursive\": true}], \"parents\": [\"default\"]}";
+        rv = lotman_add_to_lot(addition_JSON3, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg;
+
+        // Try (and hopefully fail) to remove all of the parents and orphan the lot
+        const char *removal_JSON1 = "{\"lot_name\":\"sep_node\", \"parents\":[\"default\", \"sep_node\", \"non_existent_parent\"]}";
+        rv = lotman_remove_from_lot(removal_JSON1, &err_msg3);
+        ASSERT_FALSE(rv == 0);
+
+        char *err_msg4;
+        const char *removal_JSON2 = "{\"lot_name\":\"sep_node\", \"paths\":[\"/here/is/a/path\"], \"parents\":[\"default\"]}";
+        rv = lotman_remove_from_lot(removal_JSON2, &err_msg4);
+        ASSERT_TRUE(rv == 0) << err_msg;
     }
 
     TEST(LotManTest, SetGetUsageTest) {

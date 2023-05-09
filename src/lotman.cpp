@@ -1,6 +1,7 @@
 #include <string.h>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json-schema.hpp>
+#include <iostream> // DELETE
 
 #include "lotman.h"
 #include "lotman_internal.h"
@@ -363,6 +364,83 @@ int lotman_update_lot(const char *lotman_JSON_str,
         return -1;
     }
 }
+
+int lotman_remove_from_lot(const char *lotman_JSON_str, char **err_msg) {
+    try {
+         json subtraction_JSON_obj = json::parse(lotman_JSON_str);
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::lot_subtractions_schema);
+        validator.validate(subtraction_JSON_obj);
+
+        // Check that lot exists
+        auto rp = lotman::Lot::lot_exists(subtraction_JSON_obj["lot_name"]);
+        if (!rp.first) {
+            if (err_msg) {
+                if (!rp.second.empty()) { // There was an error
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Failure on call to lot_exists: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+                else { // Lot does not exist
+                    std::string err = "Lot does not exist";
+                    *err_msg = strdup(err.c_str());
+                }
+            }
+            return -1; 
+        }
+
+        lotman::Lot lot(subtraction_JSON_obj["lot_name"].get<std::string>());
+
+        //Check for context
+        lot.get_parents(true, true);
+        rp = lot.check_context_for_parents(lot.recursive_parents, true);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Error while checking context for parents: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1; 
+        }
+
+        // Start checking which keys to operate on
+        // Operate on parents key
+        if (subtraction_JSON_obj.contains("parents")) {
+            rp = lot.remove_parents(subtraction_JSON_obj["parents"]);
+            if (!rp.first) {
+                if (err_msg) {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Failed on call to lot.remove_parents: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+            return -1; 
+            }
+        }
+
+        // Operate on paths key
+        if (subtraction_JSON_obj.contains("paths")) {
+            rp = lot.remove_paths(subtraction_JSON_obj["paths"]);
+            if (!rp.first) {
+                if (err_msg) {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Failed on call to lot.remove_paths: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+            return -1; 
+            }
+        }
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+
+    }
+}
+
 
 int lotman_add_to_lot(const char *lotman_JSON_str, char **err_msg) {
     try {    

@@ -968,6 +968,65 @@ std::pair<bool, std::string> lotman::Lot::add_paths(std::vector<json> paths) {
     }
 }
 
+std::pair<bool, std::string> lotman::Lot::remove_parents(std::vector<std::string> parents) {
+    try {
+        /*
+        First we need to check whether removing the specified parents would break the lot
+        data structure, and if it would, the function should fail without deleting anything
+        */
+
+        // Get the lot's actual set of non-recursive parents
+        this->get_parents(false, true); // non recursive, but include self if self parent
+        int remaining_parents = self_parents.size();
+
+        // Sort and deduplicate, just in case...
+        std::sort(parents.begin(), parents.end()); // sort vector to group duplicate elements
+        auto last = std::unique(parents.begin(), parents.end()); // remove consecutive duplicates
+        parents.erase(last, parents.end()); // erase the duplicates
+
+        for (const auto &parent : self_parents) {
+            if (std::find(parents.begin(), parents.end(), parent.lot_name) != parents.end()) {
+                remaining_parents -= 1;
+            }
+        }
+
+        // Make sure that there's at least one responsible parent left to be associated
+        // with the lot if all the specified parents are removed.
+        if (remaining_parents < 1) {
+            return std::make_pair(false, "Could not remove parents because doing so would orphan the lot.");
+        }
+
+        auto rp = remove_parents_from_db(parents);
+
+        if (!rp.first) {
+            std::string int_err = rp.second;
+            std::string ext_err = "Call to lotman::Lot::remove_parents failed: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+
+}
+
+std::pair<bool, std::string> lotman::Lot::remove_paths(std::vector<std::string> paths) {
+    try {
+        auto rp = remove_paths_from_db(paths);
+        if (!rp.first) {
+            std::string int_err = rp.second;
+            std::string ext_err = "Call to lotman::Lot::remove_paths failed: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        return std::make_pair(true, "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair(false, exc.what());
+    }
+
+}
+
 std::pair<bool, std::string> lotman::Lot::update_owner(std::string update_val) {
     try {
         std::string owner_update_stmt = "UPDATE owners SET owner=? WHERE lot_name=?;";
