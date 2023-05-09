@@ -105,6 +105,7 @@ class Lot {
                                                                const bool recursive);
 
         std::pair<json, std::string> get_lot_dirs(const bool recursive);
+        static std::pair<std::string, std::string> get_lot_from_dir(const std::string dir_path);
 
         std::pair<json, std::string> get_lot_usage(const std::string key,
                                                    const bool recursive);
@@ -112,16 +113,8 @@ class Lot {
         std::pair<bool, std::string> add_parents(std::vector<Lot> parents);
         std::pair<bool, std::string> add_paths(std::vector<json> paths);
 
-
-
-
-
         std::pair<bool, std::string> remove_parents(std::vector<std::string> parents);
         std::pair<bool, std::string> remove_paths(std::vector<std::string> paths);
-
-
-
-
 
         std::pair<bool, std::string> update_owner(std::string update_val);
         std::pair<bool, std::string> update_parents(json update_arr);
@@ -146,9 +139,6 @@ class Lot {
         static std::pair<std::vector<std::string>, std::string> get_lots_past_obj(const bool recursive_quota, const bool recursive_children);
         static std::pair<std::vector<std::string>, std::string> list_all_lots();
         static std::pair<std::vector<std::string>, std::string> get_lots_from_dir(std::string dir, const bool recursive);
-        
-
-
 
     private:
         std::pair<bool, std::string> write_new();
@@ -163,7 +153,6 @@ class Lot {
         std::pair<bool, std::string> remove_paths_from_db(std::vector<std::string> paths);
 
 };
-
 
 class DirUsageUpdate : public Lot {
 public: 

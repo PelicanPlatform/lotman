@@ -3,7 +3,6 @@
 #include <sqlite3.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <iostream>
 
 #include "lotman_internal.h"
 
@@ -733,21 +732,22 @@ std::pair<bool, std::string> lotman::Lot::remove_paths_from_db(std::vector<std::
     // Delete from paths table
     for (const auto &path : paths) {
         sqlite3_stmt *stmt;
-        rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE lot_name = ? AND path = ?;", -1, &stmt, NULL);
+        // rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE lot_name = ? AND path = ?;", -1, &stmt, NULL);
+        rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE path = ?;", -1, &stmt, NULL); // Because paths should be unique, we don't need to specify which lot
         if (rc != SQLITE_OK) {
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete paths from the lot: sqlite3 errno: " + std::to_string(rc));
         }
 
-        // Bind the lot
-        if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-            sqlite3_finalize(stmt);
-            sqlite3_close(db);
-            return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete a path from paths table: sqlite errno: " + std::to_string(rc));
-        }
+        // // Bind the lot
+        // if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
+        //     sqlite3_finalize(stmt);
+        //     sqlite3_close(db);
+        //     return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete a path from paths table: sqlite errno: " + std::to_string(rc));
+        // }
 
         // Bind the path
-        if (sqlite3_bind_text(stmt, 2, path.c_str(), path.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
+        if (sqlite3_bind_text(stmt, 1, path.c_str(), path.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
             sqlite3_finalize(stmt);
             sqlite3_close(db);
             return std::make_pair(false, "Call to sqlite3_bind_text for path failed when preparing to delete a path from paths table: sqlite errno: " + std::to_string(rc));

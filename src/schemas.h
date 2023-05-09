@@ -211,7 +211,7 @@ json lot_update_schema = R"(
 }
 )"_json;
 
-json lot_subtractions_schema = R"(
+json lot_rm_parents_schema = R"(
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
@@ -231,8 +231,19 @@ json lot_subtractions_schema = R"(
                 "type": "string"
             },
             "minItems":1
-        },
-        
+        }
+    },
+    "required": ["lot_name", "parents"]
+}
+)"_json;
+
+json lot_rm_paths_schema = R"(
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "subtraction obj",
+    "additionalProperties": false,
+    "properties": {
         "paths": {
             "description": "The paths to be removed from the lot",
             "type": "array",
@@ -242,7 +253,7 @@ json lot_subtractions_schema = R"(
             "minItems":1
         }
     },
-    "required": ["lot_name"]
+    "required": ["paths"]
 }
 )"_json;
 

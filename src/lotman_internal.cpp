@@ -2,8 +2,6 @@
 #include <nlohmann/json.hpp>
 #include <sqlite3.h>
 
-#include <iostream>
-
 #include "lotman_internal.h"
 
 using json = nlohmann::json;
@@ -659,6 +657,30 @@ std::pair<json, std::string> lotman::Lot::get_lot_dirs(const bool recursive) {
     catch (std::exception &exc) {
         return std::make_pair(json(), exc.what());
     }
+}
+
+std::pair<std::string, std::string> lotman::Lot::get_lot_from_dir(const std::string dir_path) {
+    try {
+        std::string lot_name_query = "SELECT lot_name FROM paths WHERE path = ?;";
+        std::map<std::string, std::vector<int>> query_map{{dir_path, {1}}};
+        auto rp = lotman::Checks::SQL_get_matches(lot_name_query, query_map);
+        if (!rp.second.empty()) { // There was an error
+            std::string int_err = rp.second;
+            std::string ext_err = "Failure on call to SQL_get_matches: ";
+            return std::make_pair("", ext_err + int_err);
+        }
+
+        // rp.first[0] now contains the name of the lot, if one existed
+        if (rp.first.empty()) {
+            return std::make_pair("", ""); // Nothing existed, and no error. Return empty strings!
+        }
+        return std::make_pair(rp.first[0], "");
+    }
+    catch (std::exception &exc) {
+        return std::make_pair("", exc.what());
+    }
+
+
 }
 
 std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, const bool recursive) {

@@ -1,7 +1,6 @@
 #include <string.h>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json-schema.hpp>
-#include <iostream> // DELETE
 
 #include "lotman.h"
 #include "lotman_internal.h"
@@ -365,12 +364,12 @@ int lotman_update_lot(const char *lotman_JSON_str,
     }
 }
 
-int lotman_remove_from_lot(const char *lotman_JSON_str, char **err_msg) {
+int lotman_rm_parents_from_lot(const char *lotman_JSON_str, char **err_msg) {
     try {
          json subtraction_JSON_obj = json::parse(lotman_JSON_str);
         // Validate the incoming JSON
         json_validator validator;
-        validator.set_root_schema(lotman_schemas::lot_subtractions_schema);
+        validator.set_root_schema(lotman_schemas::lot_rm_parents_schema);
         validator.validate(subtraction_JSON_obj);
 
         // Check that lot exists
@@ -404,32 +403,16 @@ int lotman_remove_from_lot(const char *lotman_JSON_str, char **err_msg) {
             return -1; 
         }
 
-        // Start checking which keys to operate on
-        // Operate on parents key
-        if (subtraction_JSON_obj.contains("parents")) {
-            rp = lot.remove_parents(subtraction_JSON_obj["parents"]);
-            if (!rp.first) {
-                if (err_msg) {
-                    std::string int_err = rp.second;
-                    std::string ext_err = "Failed on call to lot.remove_parents: ";
-                    *err_msg = strdup((ext_err + int_err).c_str());
-                }
-            return -1; 
+        rp = lot.remove_parents(subtraction_JSON_obj["parents"]);
+        if (!rp.first) {
+            if (err_msg) {
+                std::string int_err = rp.second;
+                std::string ext_err = "Failed on call to lot.remove_parents: ";
+                *err_msg = strdup((ext_err + int_err).c_str());
             }
+        return -1; 
         }
 
-        // Operate on paths key
-        if (subtraction_JSON_obj.contains("paths")) {
-            rp = lot.remove_paths(subtraction_JSON_obj["paths"]);
-            if (!rp.first) {
-                if (err_msg) {
-                    std::string int_err = rp.second;
-                    std::string ext_err = "Failed on call to lot.remove_paths: ";
-                    *err_msg = strdup((ext_err + int_err).c_str());
-                }
-            return -1; 
-            }
-        }
         return 0;
     }
     catch (std::exception &exc) {
@@ -441,6 +424,71 @@ int lotman_remove_from_lot(const char *lotman_JSON_str, char **err_msg) {
     }
 }
 
+int lotman_rm_paths_from_lots(const char *lotman_JSON_str, char **err_msg) {
+    try {
+         json subtraction_JSON_obj = json::parse(lotman_JSON_str);
+        // Validate the incoming JSON
+        json_validator validator;
+        validator.set_root_schema(lotman_schemas::lot_rm_paths_schema);
+        validator.validate(subtraction_JSON_obj);
+
+        // For each path, figure out which lot it belongs to
+        // Knowing the lot name is required for context checking
+        for (const auto &path : subtraction_JSON_obj["paths"]) {
+            std::string path_str{path.get<std::string>()};
+            char *lot_name;
+
+            // If this func hits an error, no need to free lot_name because it
+            // shouldn't make it to strdup
+            int rv = lotman_get_lot_from_dir(path_str.c_str(), &lot_name, err_msg);
+            if (rv != 0) {
+                // An error message will already be populated to err_msg
+                return -1;
+            }
+
+            if (!lot_name) { // When no lot is found, lot_name is set to nullptr
+                // There's nothing to remove, so jump to next path
+                continue;
+            }
+
+            // Initialize the lot
+            lotman::Lot lot(lot_name);
+            free(lot_name); // Lot is initialized, don't need this anymore.
+
+            //Check for context
+            lot.get_parents(true, true);
+            auto rp = lot.check_context_for_parents(lot.recursive_parents, true);
+            if (!rp.first) {
+                if (err_msg) {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Error while checking context for parents: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+                return -1; 
+            }
+
+            std::vector<std::string> plc_hldr_vec{path_str};
+            rp = lot.remove_paths(plc_hldr_vec); // Keeping std::vector<std::string> signature for now, even though it only gets passed one thing at a time
+            if (!rp.first) {
+                if (err_msg) {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Failed on call to lot.remove_paths: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+            return -1; 
+            }
+        }
+        
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+
+    }
+}
 
 int lotman_add_to_lot(const char *lotman_JSON_str, char **err_msg) {
     try {    
@@ -851,6 +899,38 @@ int lotman_get_policy_attributes(const char *policy_attributes_JSON_str,
         auto output_str_c = static_cast<char *>(malloc(sizeof(char) * (output_str.length() + 1)));
         output_str_c = strdup(output_str.c_str());
         *output = output_str_c;
+        return 0;
+    }
+    catch (std::exception &exc) {
+        if (err_msg) {
+            *err_msg = strdup(exc.what());
+        }
+        return -1;
+    }
+}
+
+int lotman_get_lot_from_dir(const char *dir_name, char **output, char **err_msg) {
+    try {
+        auto rp = lotman::Lot::get_lot_from_dir(dir_name);
+        if (!rp.second.empty()) { // There was an error
+            if (err_msg) {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Failed to get lot name: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }
+            return -1; 
+        }
+
+        // Sometimes a path might not come from a lot, so we need to check that a lot name was found
+        if (rp.first.empty()) { // No error and no lot --> no lot was found
+            *output = nullptr; // this is how we indicate that no lot was found. 
+            return 0;
+        }
+        // Now safe to copy lot name to output
+        std::string lot_name_str = rp.first;
+        auto lot_name_str_c = static_cast<char *>(malloc(sizeof(char) * (lot_name_str.length() + 1)));
+        lot_name_str_c = strdup(lot_name_str.c_str());
+        *output = lot_name_str_c;
         return 0;
     }
     catch (std::exception &exc) {

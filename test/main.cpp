@@ -132,11 +132,12 @@ namespace {
         const char *modified_lot2 = "{ \"lot_name\": \"lot2\", \"parents\": [{\"current\":\"lot1\", \"new\":\"lot3\"}]}";
         rv = lotman_update_lot(modified_lot2, &err_msg);
         ASSERT_FALSE(rv == 0);
+        free(err_msg);
 
         char *err_msg2;
         char **owner_out;
         rv = lotman_get_owners("lot3", false, &owner_out, &err_msg2);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        ASSERT_TRUE(rv == 0) << err_msg2;
         
         bool check_old = false, check_new =  false;
         for (int iter = 0; owner_out[iter]; iter++) {
@@ -152,7 +153,7 @@ namespace {
 
         char **parents_out;
         rv = lotman_get_parent_names("lot3", false, true, &parents_out, &err_msg2);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        ASSERT_TRUE(rv == 0) << err_msg2;
 
         check_old = false, check_new = false;
         for (int iter = 0; parents_out[iter]; iter++) {
@@ -167,30 +168,45 @@ namespace {
         lotman_free_string_list(parents_out);
 
         const char *addition_JSON = "{\"lot_name\":\"lot3\", \"paths\": [{\"path\":\"/foo/barr\", \"recursive\": true}], \"parents\" : [\"sep_node\"]}";
-        rv = lotman_add_to_lot(addition_JSON, &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        rv = lotman_add_to_lot(addition_JSON, &err_msg2);
+        ASSERT_TRUE(rv == 0) << err_msg2;
 
         // Try to add a cycle --> this should fail
         const char *addition_JSON2 = "{ \"lot_name\": \"lot1\", \"parents\": [\"lot2\"]}";
         rv = lotman_add_to_lot(addition_JSON2, &err_msg2);
         ASSERT_FALSE(rv == 0);
+        free(err_msg2);
 
-        // Test removing parents/paths from lots
+        // Test removing parents
         // Add default as parent to sep_node, then remove
         char *err_msg3;
-        const char *addition_JSON3 = "{\"lot_name\":\"sep_node\", \"paths\":[{\"path\":\"/here/is/a/path\", \"recursive\": true}], \"parents\": [\"default\"]}";
+        const char *addition_JSON3 = "{\"lot_name\":\"sep_node\", \"parents\": [\"default\"]}";
         rv = lotman_add_to_lot(addition_JSON3, &err_msg3);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        ASSERT_TRUE(rv == 0) << err_msg3;
 
         // Try (and hopefully fail) to remove all of the parents and orphan the lot
         const char *removal_JSON1 = "{\"lot_name\":\"sep_node\", \"parents\":[\"default\", \"sep_node\", \"non_existent_parent\"]}";
-        rv = lotman_remove_from_lot(removal_JSON1, &err_msg3);
+        rv = lotman_rm_parents_from_lot(removal_JSON1, &err_msg3);
         ASSERT_FALSE(rv == 0);
+        free(err_msg3);
 
         char *err_msg4;
-        const char *removal_JSON2 = "{\"lot_name\":\"sep_node\", \"paths\":[\"/here/is/a/path\"], \"parents\":[\"default\"]}";
-        rv = lotman_remove_from_lot(removal_JSON2, &err_msg4);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        const char *removal_JSON2 = "{\"lot_name\":\"sep_node\", \"parents\":[\"default\"]}";
+        rv = lotman_rm_parents_from_lot(removal_JSON2, &err_msg4);
+        ASSERT_TRUE(rv == 0) << err_msg4;
+
+        // Test adding paths to a few lots, then remove
+        const char *addition_JSON4 = "{\"lot_name\":\"sep_node\", \"paths\":[{\"path\":\"/here/is/a/path\", \"recursive\": true}]}";
+        rv = lotman_add_to_lot(addition_JSON4, &err_msg4);
+        ASSERT_TRUE(rv == 0) << err_msg4;
+
+        const char *addition_JSON5 = "{\"lot_name\":\"lot1\", \"paths\":[{\"path\":\"/here/is/another/path\", \"recursive\": true}]}";
+        rv = lotman_add_to_lot(addition_JSON5, &err_msg4);
+        ASSERT_TRUE(rv == 0) << err_msg4;
+
+        const char *removal_JSON3 = "{\"paths\":[\"/here/is/a/path\", \"/path/does/not/exist\", \"/here/is/another/path\"]}";
+        rv = lotman_rm_paths_from_lots(removal_JSON3, &err_msg4);
+        ASSERT_TRUE(rv == 0) << err_msg4;
     }
 
     TEST(LotManTest, SetGetUsageTest) {
