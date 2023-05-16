@@ -20,6 +20,8 @@ namespace {
 
         rv = lotman_add_lot(lot1, &err1);
         ASSERT_FALSE(!(rv != 0 && err1 != nullptr)) << err1;
+        // There should be an err message, so we need to free
+        free(err1);
 
         char *err2;
         rv = lotman_add_lot(default_lot, &err2);
@@ -27,6 +29,8 @@ namespace {
 
         rv = lotman_remove_lot("default", true, true, true, false, &err2);
         ASSERT_FALSE(rv == 0 && err2 == nullptr) << err2;
+        // There should be an err message, so we need to free
+        free(err2);
     }
 
     TEST(LotManTest, AddRemoveSublot) {
@@ -75,11 +79,16 @@ namespace {
         const char *cyclic_lot = "{\"lot_name\": \"lot5\",\"owner\": \"owner1\",\"parents\": [\"lot4\"],\"children\": [\"lot1\"],\"paths\": [{\"path\":\"/456\", \"recursive\":false},{\"path\":\"/567\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
         rv = lotman_add_lot(cyclic_lot, &err_msg);
         ASSERT_FALSE(rv == 0) << err_msg;
+        // There should be an err message, so we need to free
+        free(err_msg);
 
         // Try to add lot with no parent
+        char *err_msg2;
         const char *no_parents_lot = "{\"lot_name\": \"lot5\",\"owner\": \"owner1\",\"parents\": [],\"children\": [\"lot1\"],\"paths\": [{\"path\":\"/456\", \"recursive\":false},{\"path\":\"/567\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":111111,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
-        rv = lotman_add_lot(no_parents_lot, &err_msg);
+        rv = lotman_add_lot(no_parents_lot, &err_msg2);
         ASSERT_FALSE(rv == 0) << err_msg;
+        // There should be an err message, so we need to free
+        free(err_msg2);
     }
 
     TEST(LotManTest, InsertionTest) {
@@ -244,6 +253,7 @@ namespace {
         rv = lotman_get_lot_usage(lot1_usage_query, &lot1_output, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
         json lot1_json_out = json::parse(lot1_output);
+        free(lot1_output);
         ASSERT_TRUE(lot1_json_out["total_GB"]["total"] == 10.383 && lot1_json_out["num_objects"]["total"] == 40);
 
         // Check output for lot4
@@ -252,6 +262,7 @@ namespace {
         rv = lotman_get_lot_usage(lot4_usage_query, &lot4_output, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
         json lot4_json_out = json::parse(lot4_output);
+        free(lot4_output);
         ASSERT_TRUE(lot4_json_out["total_GB"]["total"] == 3.14 && lot4_json_out["num_objects"]["total"] == 6);
         
         // Check output for default
@@ -260,6 +271,7 @@ namespace {
         rv = lotman_get_lot_usage(default_usage_query, &default_output, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
         json default_json_out = json::parse(default_output);
+        free(default_output);
         ASSERT_TRUE(default_json_out["total_GB"]["total"] == 0.75 && default_json_out["num_objects"]["total"] == 0);
 }
 
@@ -345,32 +357,40 @@ namespace {
         // Any actions that modify the properties of a lot must have proper auth
         // These tests should all fail (context set to nonexistant owner)
         
-        char *err_msg;
+        char *err_msg1;
         const char *lot6 = "{ \"lot_name\": \"lot6\", \"owner\": \"owner1\", \"parents\": [\"lot5\"], \"paths\": [], \"management_policy_attrs\": { \"dedicated_GB\":3,\"opportunistic_GB\":2.1,\"max_num_objects\":40,\"creation_time\":123,\"expiration_time\":231,\"deletion_time\":315}}";
 
         // Try to add a lot without correct context
-        auto rv = lotman_set_context("caller", "notAnOwner", &err_msg);
-        rv = lotman_add_lot(lot6, &err_msg);
-        ASSERT_FALSE(rv == 0) << err_msg;
-        rv = lotman_lot_exists("lot6", &err_msg);
+        auto rv = lotman_set_context("caller", "notAnOwner", &err_msg1);
+        rv = lotman_add_lot(lot6, &err_msg1);
+        ASSERT_FALSE(rv == 0) << err_msg1;
+        free(err_msg1);
+
+        char *err_msg2;
+        rv = lotman_lot_exists("lot6", &err_msg2);
         ASSERT_FALSE(rv == 1);
 
         // Try to remove a lot without correct context
-        rv = lotman_remove_lots_recursive("lot1", &err_msg);
+        rv = lotman_remove_lots_recursive("lot1", &err_msg2);
         ASSERT_FALSE(rv == 0);
-        rv = lotman_lot_exists("lot1", &err_msg);
+        free(err_msg2);
+
+        char *err_msg3;
+        rv = lotman_lot_exists("lot1", &err_msg3);
         ASSERT_TRUE(rv == 1);
 
         // Try to update a lot without correct context
         const char *modified_lot = "{ \"lot_name\": \"lot3\", \"owner\": \"Bad Update\"}";
-        rv = lotman_update_lot(modified_lot, &err_msg);
+        rv = lotman_update_lot(modified_lot, &err_msg3);
         ASSERT_FALSE(rv == 0);
+        free(err_msg3);
 
         // Try to update lot usage without correct context
+        char *err_msg4;
         const char *usage_update_JSON = "{\"lot_name\":\"lot5\",\"self_GB\":99}";
-        rv = lotman_update_lot_usage(usage_update_JSON, &err_msg);
+        rv = lotman_update_lot_usage(usage_update_JSON, &err_msg4);
         ASSERT_FALSE(rv == 0);
-
+        free(err_msg4);
     }
 
     TEST(LotManTest, LotsQueryTest) {

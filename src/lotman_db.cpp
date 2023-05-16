@@ -421,6 +421,7 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from owners table: sqlite3 errno: " + std::to_string(rc));
     }
+    sqlite3_finalize(stmt);
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
     
     // Delete from parents table
@@ -440,6 +441,7 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from parents table: sqlite3 errno: " + std::to_string(rc));
     }
+    sqlite3_finalize(stmt);
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     // Delete from paths
@@ -459,6 +461,7 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from paths table: sqlite3 errno: " + std::to_string(rc));
     }
+    sqlite3_finalize(stmt);
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     // Delete from management_policy_attributes
@@ -478,6 +481,7 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from management_policy_attributes table: sqlite3 errno: " + std::to_string(rc));
     }
+    sqlite3_finalize(stmt);
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     // Delete from lot_usage
@@ -497,9 +501,9 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from usage table: sqlite3 errno: " + std::to_string(rc));
     }
-    sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     sqlite3_finalize(stmt);
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
     sqlite3_close(db);
 
     return std::make_pair(true, "");
