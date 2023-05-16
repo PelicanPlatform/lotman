@@ -421,6 +421,7 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from owners table: sqlite3 errno: " + std::to_string(rc));
     }
+    sqlite3_finalize(stmt);
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
     
     // Delete from parents table
@@ -440,6 +441,7 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from parents table: sqlite3 errno: " + std::to_string(rc));
     }
+    sqlite3_finalize(stmt);
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     // Delete from paths
@@ -459,6 +461,7 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from paths table: sqlite3 errno: " + std::to_string(rc));
     }
+    sqlite3_finalize(stmt);
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     // Delete from management_policy_attributes
@@ -478,6 +481,7 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from management_policy_attributes table: sqlite3 errno: " + std::to_string(rc));
     }
+    sqlite3_finalize(stmt);
     sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     // Delete from lot_usage
@@ -497,9 +501,9 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         sqlite3_close(db);
         return std::make_pair(false, "Failed to delete lot from usage table: sqlite3 errno: " + std::to_string(rc));
     }
-    sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
     sqlite3_finalize(stmt);
+    sqlite3_exec(db, "COMMIT", 0, 0, 0);
     sqlite3_close(db);
 
     return std::make_pair(true, "");
@@ -667,6 +671,103 @@ std::pair<bool, std::string> lotman::Lot::store_new_parents(std::vector<Lot> new
     sqlite3_close(db);
 
     return std::make_pair(true, "");    
+}
+
+std::pair<bool, std::string> lotman::Lot::remove_parents_from_db( std::vector<std::string> parents) {
+    auto lot_fname = get_lot_file();
+    if (!lot_fname.first) {
+        return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
+    }
+    sqlite3 *db;
+    int rc = sqlite3_open(lot_fname.second.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
+    }
+
+    // Delete from parents table
+    for (const auto &parent : parents) {
+        sqlite3_stmt *stmt;
+        rc = sqlite3_prepare_v2(db, "DELETE FROM parents WHERE lot_name = ? AND parent = ?;", -1, &stmt, NULL);
+        if (rc != SQLITE_OK) {
+            sqlite3_close(db);
+            return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete parents from the lot: sqlite3 errno: " + std::to_string(rc));
+        }
+
+        // Bind the lot
+        if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete a parent from parents table: sqlite errno: " + std::to_string(rc));
+        }
+
+        // Bind the parent
+        if (sqlite3_bind_text(stmt, 2, parent.c_str(), parent.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return std::make_pair(false, "Call to sqlite3_bind_text for parent.lot_name failed when preparing to delete a parent from parents table: sqlite errno: " + std::to_string(rc));
+        }
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return std::make_pair(false, "Failed to delete parent from parents table: sqlite3 errno: " + std::to_string(rc));
+        }
+        sqlite3_exec(db, "COMMIT", 0, 0, 0);
+        sqlite3_finalize(stmt); 
+    }
+
+    sqlite3_close(db);
+    return std::make_pair(true, "");
+}
+
+std::pair<bool, std::string> lotman::Lot::remove_paths_from_db(std::vector<std::string> paths) {
+    auto lot_fname = get_lot_file();
+    if (!lot_fname.first) {
+        return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
+    }
+    sqlite3 *db;
+    int rc = sqlite3_open(lot_fname.second.c_str(), &db);
+    if (rc) {
+        sqlite3_close(db);
+        return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
+    }
+
+    // Delete from paths table
+    for (const auto &path : paths) {
+        sqlite3_stmt *stmt;
+        // rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE lot_name = ? AND path = ?;", -1, &stmt, NULL);
+        rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE path = ?;", -1, &stmt, NULL); // Because paths should be unique, we don't need to specify which lot
+        if (rc != SQLITE_OK) {
+            sqlite3_close(db);
+            return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete paths from the lot: sqlite3 errno: " + std::to_string(rc));
+        }
+
+        // // Bind the lot
+        // if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
+        //     sqlite3_finalize(stmt);
+        //     sqlite3_close(db);
+        //     return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete a path from paths table: sqlite errno: " + std::to_string(rc));
+        // }
+
+        // Bind the path
+        if (sqlite3_bind_text(stmt, 1, path.c_str(), path.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return std::make_pair(false, "Call to sqlite3_bind_text for path failed when preparing to delete a path from paths table: sqlite errno: " + std::to_string(rc));
+        }
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) {
+            sqlite3_finalize(stmt);
+            sqlite3_close(db);
+            return std::make_pair(false, "Failed to delete path from path table: sqlite3 errno: " + std::to_string(rc));
+        }
+        sqlite3_exec(db, "COMMIT", 0, 0, 0);
+        sqlite3_finalize(stmt); 
+    }
+
+    sqlite3_close(db);
+    return std::make_pair(true, "");
 }
 
 std::pair<std::vector<std::string>, std::string> lotman::Checks::SQL_get_matches(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map, std::map<int64_t, std::vector<int>> int_map, std::map<double, std::vector<int>> double_map) { 

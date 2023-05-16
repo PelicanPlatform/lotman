@@ -211,6 +211,52 @@ json lot_update_schema = R"(
 }
 )"_json;
 
+json lot_rm_parents_schema = R"(
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "subtraction obj",
+    "additionalProperties": false,
+    "properties": {
+        "lot_name": {
+            "description": "Name of lot being modified",
+            "type": "string",
+            "minLength": 1
+        },
+
+        "parents": {
+            "description": "The names of parent lots to be removed",
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "minItems":1
+        }
+    },
+    "required": ["lot_name", "parents"]
+}
+)"_json;
+
+json lot_rm_paths_schema = R"(
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "subtraction obj",
+    "additionalProperties": false,
+    "properties": {
+        "paths": {
+            "description": "The paths to be removed from the lot",
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "minItems":1
+        }
+    },
+    "required": ["paths"]
+}
+)"_json;
+
 json lot_additions_schema = R"(
 {
     "$schema": "http://json-schema.org/draft-07/schema#",

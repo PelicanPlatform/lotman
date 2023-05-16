@@ -70,20 +70,17 @@ class Lot {
             bool assign_policy_to_children;
         } reassignment_policy;
 
+        // Should re-evaluate whether all/any of these are needed...
         bool full_lot = false;
         bool has_name = false;
         bool has_reassignment_policy = false;
         bool is_root;
         
-
-
         // Constructors
         Lot() {};
         Lot(const char * lot_name) : lot_name{lot_name}, has_name{true} {};
         Lot(std::string lot_name) : lot_name{lot_name}, has_name{true} {};
         Lot(json lot_JSON) {init_full(lot_JSON);};
-
-
 
         std::pair<bool, std::string> init_full(json lot_JSON); 
         std::pair<bool, std::string> init_reassignment_policy(const bool assign_LTBR_parent_as_parent_to_orphans, 
@@ -108,12 +105,16 @@ class Lot {
                                                                const bool recursive);
 
         std::pair<json, std::string> get_lot_dirs(const bool recursive);
+        static std::pair<std::string, std::string> get_lot_from_dir(const std::string dir_path);
 
         std::pair<json, std::string> get_lot_usage(const std::string key,
                                                    const bool recursive);
 
         std::pair<bool, std::string> add_parents(std::vector<Lot> parents);
         std::pair<bool, std::string> add_paths(std::vector<json> paths);
+
+        std::pair<bool, std::string> remove_parents(std::vector<std::string> parents);
+        std::pair<bool, std::string> remove_paths(std::vector<std::string> paths);
 
         std::pair<bool, std::string> update_owner(std::string update_val);
         std::pair<bool, std::string> update_parents(json update_arr);
@@ -138,9 +139,6 @@ class Lot {
         static std::pair<std::vector<std::string>, std::string> get_lots_past_obj(const bool recursive_quota, const bool recursive_children);
         static std::pair<std::vector<std::string>, std::string> list_all_lots();
         static std::pair<std::vector<std::string>, std::string> get_lots_from_dir(std::string dir, const bool recursive);
-        
-
-
 
     private:
         std::pair<bool, std::string> write_new();
@@ -151,9 +149,10 @@ class Lot {
                                                    std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
                                                    std::map<int64_t, std::vector<int>> update_int_map =std::map<int64_t, std::vector<int>>(),
                                                    std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
+        std::pair<bool, std::string> remove_parents_from_db(std::vector<std::string> parents);
+        std::pair<bool, std::string> remove_paths_from_db(std::vector<std::string> paths);
 
 };
-
 
 class DirUsageUpdate : public Lot {
 public: 
