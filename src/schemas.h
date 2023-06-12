@@ -437,7 +437,40 @@ json update_usage_schema = R"(
 }
 )"_json;
 
-
+json update_usage_delta_schema = R"(
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "update usage obj",
+    "additionalProperties": false,
+    "properties": {
+        "lot_name": {
+            "description": "Name of lot whose attrs are to be obtained",
+            "type": "string",
+            "minLength": 1
+        },
+        "self_GB": {
+            "description": "The number of GB a lot is using, not including children usage.",
+            "type": "number"
+        },
+        "self_objects": {
+            "description": "The number of objects attributed to a lot, not including children.",
+            "type": "number",
+            "multipleOf": 1
+        },
+        "self_GB_being_written": {
+            "description": "GB currently being written to a lot, not including children.",
+            "type": "number"
+        },
+        "self_objects_being_written": {
+            "description": "The number of objects being written to a lot, not including children.",
+            "type": "number",
+            "multipleOf": 1
+        }
+    },
+    "required": ["lot_name"]
+}
+)"_json;
 /*
 NOTE: This schema only validates a single top level object, but does get the array of objects 
       after "subdirs". To validate the top array of these objects, iterate through the array
@@ -467,6 +500,43 @@ json update_usage_by_dir_schema = R"(
             "description": "The number of objects, if the resource itself is not an object.",
             "type": "number",
             "minimum": 0,
+            "multipleOf": 1
+        },
+        "includes_subdirs": {
+            "description": "Whether or not any subdirs are counted toward the size_GB or num_obj values.",
+            "type": "boolean"
+        },
+        "subdirs": {
+            "description": "JSON of any of the subdirs, required if include_subdirs is true.",
+            "type": "array",
+            "items": {
+                "$ref": "#"
+            }
+        }
+    },
+    "required": ["path", "includes_subdirs"]
+}
+)"_json;
+
+json update_usage_by_dir_delta_schema = R"(
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "title": "update usage by dir obj",
+    "additionalProperties": false,
+    "properties": {
+        "path": {
+            "description": "The path/object name.",
+            "type": "string",
+            "minLength": 1
+        },
+        "size_GB": {
+            "description": "The size of the resource.",
+            "type": "number"
+        },
+        "num_obj": {
+            "description": "The number of objects, if the resource itself is not an object.",
+            "type": "number",
             "multipleOf": 1
         },
         "includes_subdirs": {

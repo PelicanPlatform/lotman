@@ -215,8 +215,8 @@ int lotman_get_children_names(const char *lot_name, const bool recursive, const 
 int lotman_get_policy_attributes(const char *policy_attributes_JSON, char **output, char **err_msg);
 int lotman_get_lot_dirs(const char *lot_name, const bool recursive, char **output, char **err_msg);
 int lotman_get_lot_usage(const char *usage_attributes_JSON, char **output, char **err_msg);
-int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg);
-int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg);
+int lotman_update_lot_usage(const char *update_JSON_str, bool deltaMode, char **err_msg);
+int lotman_update_lot_usage_by_dir(const char *update_JSON_str, bool deltaMode, char **err_msg);
 
 
 
@@ -237,7 +237,7 @@ int lotman_get_lots_from_dir(const char *dir, const bool recursive, char ***outp
 
 
 
-int lotman_set_context(const char *key, const char *value, char **err_msg);
+int lotman_set_context_str(const char *key, const char *value, char **err_msg);
 
 
 #ifdef __cplusplus

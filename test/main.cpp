@@ -16,7 +16,7 @@ namespace {
         const char *lot1 = "{\"lot_name\": \"lot1\", \"owner\": \"owner1\",  \"parents\": [\"lot1\"],\"paths\": [{\"path\":\"/1/2/3\", \"recursive\":false},{\"path\":\"/foo/bar\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
         const char *default_lot = "{\"lot_name\": \"default\", \"owner\": \"owner2\",  \"parents\": [\"default\"],\"paths\": [{\"path\":\"/default/paths\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
 
-        auto rv = lotman_set_context("caller", "owner1", &err1);
+        auto rv = lotman_set_context_str("caller", "owner1", &err1);
 
         rv = lotman_add_lot(lot1, &err1);
         ASSERT_FALSE(!(rv != 0 && err1 != nullptr)) << err1;
@@ -35,8 +35,6 @@ namespace {
 
     TEST(LotManTest, AddRemoveSublot) {
         char *err_msg;
-        const char *context;
-
         const char *lot1 = "{\"lot_name\": \"lot1\", \"owner\": \"owner1\",  \"parents\": [\"lot1\"],\"paths\": [{\"path\":\"1/2/3\", \"recursive\":false},{\"path\":\"/foo/bar\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
 
         auto rv = lotman_add_lot(lot1, &err_msg);
@@ -93,8 +91,6 @@ namespace {
 
     TEST(LotManTest, InsertionTest) {
         char *err_msg;
-        const char *context;
-
         const char *lot5 = "{\"lot_name\": \"lot5\",\"owner\":\"owner1\",\"parents\": [\"lot3\"],\"children\": [\"lot4\"],\"paths\": [{\"path\":\"/456\", \"recursive\":false},{\"path\":\"/567\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":10,\"opportunistic_GB\":3.5,\"max_num_objects\":20,\"creation_time\":100,\"expiration_time\":200,\"deletion_time\":300}}";
         int rv = lotman_add_lot(lot5, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
@@ -131,8 +127,6 @@ namespace {
 
     TEST(LotManTest, ModifyLotTest) {
         char *err_msg;
-        const char *context;
-
         const char *modified_lot = "{ \"lot_name\": \"lot3\", \"owner\": \"not owner1\",  \"parents\": [{\"current\":\"lot3\", \"new\":\"lot2\"}],  \"paths\": [{\"current\": \"/another/path\", \"new\": \"/another/path\", \"recursive\": true},{\"current\":\"/123\", \"new\" : \"/updated/path\", \"recursive\" : false}], \"management_policy_attrs\": { \"dedicated_GB\":10.111,\"opportunistic_GB\":6.6,\"max_num_objects\":50,\"expiration_time\":222,\"deletion_time\":333}}";
         int rv = lotman_update_lot(modified_lot, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
@@ -221,12 +215,13 @@ namespace {
     TEST(LotManTest, SetGetUsageTest) {
         // Update by lot
         char *err_msg;
+        bool deltaMode = false;
         const char *usage1_update_JSON = "{\"lot_name\":\"lot4\", \"self_GB\":10.5, \"self_objects\":4, \"self_GB_being_written\":2.2, \"self_objects_being_written\":2}";
-        int rv = lotman_update_lot_usage(usage1_update_JSON, &err_msg);
+        int rv = lotman_update_lot_usage(usage1_update_JSON, deltaMode, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
 
         const char *usage2_update_JSON = "{\"lot_name\":\"lot5\",\"self_GB\":3.5, \"self_objects\":7, \"self_GB_being_written\":1.2, \"self_objects_being_written\":5}";
-        rv = lotman_update_lot_usage(usage2_update_JSON, &err_msg);
+        rv = lotman_update_lot_usage(usage2_update_JSON, deltaMode, &err_msg);
         ASSERT_TRUE(rv == 0) << err_msg;
 
         char *output;
@@ -243,7 +238,7 @@ namespace {
 
         // Update by dir -- This ends up updating default, lot1 and lot4
         const char *update_JSON_str = "[{\"includes_subdirs\": true,\"num_obj\": 40,\"path\": \"/1/2/3\",\"size_GB\": 5.12,\"subdirs\": [{\"includes_subdirs\": true,\"num_obj\": 6,\"path\": \"4\",\"size_GB\": 3.14,\"subdirs\": [{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"5\",\"size_GB\": 1.6,\"subdirs\": []}]},{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"5/6\",\"size_GB\": 0.5,\"subdirs\": []},{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"6\",\"size_GB\": 0.25,\"subdirs\": []}]},{\"includes_subdirs\": true,\"num_obj\": 6,\"path\": \"foo/bar\",\"size_GB\": 9.153,\"subdirs\": [{\"includes_subdirs\": true,\"num_obj\": 0,\"path\": \"baz\",\"size_GB\": 5.35,\"subdirs\": [{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"more_more_files\",\"size_GB\": 2.2,\"subdirs\": []}]}]}]";
-        rv = lotman_update_lot_usage_by_dir(update_JSON_str, &err_msg);
+        rv = lotman_update_lot_usage_by_dir(update_JSON_str, deltaMode, &err_msg);
 
         ASSERT_TRUE(rv == 0) << err_msg;
 
@@ -273,6 +268,26 @@ namespace {
         json default_json_out = json::parse(default_output);
         free(default_output);
         ASSERT_TRUE(default_json_out["total_GB"]["total"] == 0.75 && default_json_out["num_objects"]["total"] == 0);
+
+        // Update by dir in delta mode -- This ends up updating lot4
+        deltaMode = true;
+        const char *update2_JSON_str = "[{\"includes_subdirs\": false,\"num_obj\": -3,\"path\": \"/1/2/3/4\",\"size_GB\": 2,\"subdirs\": []}]";
+        rv = lotman_update_lot_usage_by_dir(update2_JSON_str, deltaMode, &err_msg);
+
+        ASSERT_TRUE(rv == 0) << err_msg;
+
+        // Check output for lot4
+        rv = lotman_get_lot_usage(lot4_usage_query, &lot4_output, &err_msg);
+        ASSERT_TRUE(rv == 0) << err_msg;
+        lot4_json_out = json::parse(lot4_output);
+        free(lot4_output);
+        ASSERT_TRUE(lot4_json_out["total_GB"]["total"] == 5.14 && lot4_json_out["num_objects"]["total"] == 3) << lot4_json_out.dump();
+
+        // Update by dir in delta mode, but attempt to make self_gb negative (should fail)
+        const char *update3_JSON_str = "[{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"/1/2/3/4\",\"size_GB\": -10,\"subdirs\": []}]";
+        rv = lotman_update_lot_usage_by_dir(update3_JSON_str, deltaMode, &err_msg);
+        ASSERT_FALSE(rv == 0) << err_msg;
+        free(err_msg);
 }
 
     TEST(LotManTest, GetOwnersTest) {
@@ -361,7 +376,7 @@ namespace {
         const char *lot6 = "{ \"lot_name\": \"lot6\", \"owner\": \"owner1\", \"parents\": [\"lot5\"], \"paths\": [], \"management_policy_attrs\": { \"dedicated_GB\":3,\"opportunistic_GB\":2.1,\"max_num_objects\":40,\"creation_time\":123,\"expiration_time\":231,\"deletion_time\":315}}";
 
         // Try to add a lot without correct context
-        auto rv = lotman_set_context("caller", "notAnOwner", &err_msg1);
+        auto rv = lotman_set_context_str("caller", "notAnOwner", &err_msg1);
         rv = lotman_add_lot(lot6, &err_msg1);
         ASSERT_FALSE(rv == 0) << err_msg1;
         free(err_msg1);
@@ -388,7 +403,7 @@ namespace {
         // Try to update lot usage without correct context
         char *err_msg4;
         const char *usage_update_JSON = "{\"lot_name\":\"lot5\",\"self_GB\":99}";
-        rv = lotman_update_lot_usage(usage_update_JSON, &err_msg4);
+        rv = lotman_update_lot_usage(usage_update_JSON, false, &err_msg4);
         ASSERT_FALSE(rv == 0);
         free(err_msg4);
     }
@@ -483,7 +498,7 @@ namespace {
         ASSERT_TRUE(rv == 0);
         json output_JSON = json::parse(output);
         free(output);
-        json expected_output = R"({"children":["lot4","lot5"],"lot_name":"lot3","management_policy_attrs":{"creation_time":{"lot_name":"lot3","value":123.0},"dedicated_GB":{"lot_name":"sep_node","value":3.0},"deletion_time":{"lot_name":"lot3","value":333.0},"expiration_time":{"lot_name":"lot3","value":222.0},"max_num_objects":{"lot_name":"sep_node","value":10.0},"opportunistic_GB":{"lot_name":"lot2","value":1.5}},"owners":["not owner1","owner1"],"parents":["lot1","lot2","sep_node"],"paths":{"/1/2/3/4":{"lot_name":"lot4","recursive":true},"/345":{"lot_name":"lot4","recursive":true},"/456":{"lot_name":"lot5","recursive":false},"/567":{"lot_name":"lot5","recursive":true},"/another/path":{"lot_name":"lot3","recursive":true},"/foo/barr":{"lot_name":"lot3","recursive":true},"/updated/path":{"lot_name":"lot3","recursive":false}},"usage":{"GB_being_written":{"children_contrib":3.4,"self_contrib":0.0},"dedicated_GB":{"children_contrib":6.64,"self_contrib":0.0,"total":6.64},"num_objects":{"children_contrib":13.0,"self_contrib":0.0},"objects_being_written":{"children_contrib":7.0,"self_contrib":0.0},"opportunistic_GB":{"children_contrib":0.0,"self_contrib":0.0,"total":0.0},"total_GB":{"children_contrib":6.64,"self_contrib":0.0}}})"_json;
+        json expected_output = R"({"children":["lot4","lot5"],"lot_name":"lot3","management_policy_attrs":{"creation_time":{"lot_name":"lot3","value":123.0},"dedicated_GB":{"lot_name":"sep_node","value":3.0},"deletion_time":{"lot_name":"lot3","value":333.0},"expiration_time":{"lot_name":"lot3","value":222.0},"max_num_objects":{"lot_name":"sep_node","value":10.0},"opportunistic_GB":{"lot_name":"lot2","value":1.5}},"owners":["not owner1","owner1"],"parents":["lot1","lot2","sep_node"],"paths":{"/1/2/3/4":{"lot_name":"lot4","recursive":true},"/345":{"lot_name":"lot4","recursive":true},"/456":{"lot_name":"lot5","recursive":false},"/567":{"lot_name":"lot5","recursive":true},"/another/path":{"lot_name":"lot3","recursive":true},"/foo/barr":{"lot_name":"lot3","recursive":true},"/updated/path":{"lot_name":"lot3","recursive":false}},"usage":{"GB_being_written":{"children_contrib":3.4,"self_contrib":0.0},"dedicated_GB":{"children_contrib":8.64,"self_contrib":0.0,"total":8.64},"num_objects":{"children_contrib":10.0,"self_contrib":0.0},"objects_being_written":{"children_contrib":7.0,"self_contrib":0.0},"opportunistic_GB":{"children_contrib":0.0,"self_contrib":0.0,"total":0.0},"total_GB":{"children_contrib":8.64,"self_contrib":0.0}}})"_json;
         ASSERT_TRUE(output_JSON == expected_output);
     }
 

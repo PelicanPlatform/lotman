@@ -17,6 +17,63 @@ class Context;
 
 using json = nlohmann::json;
 
+// std::vector<std::string> get_lname_str_vec(std::vector<Lot> lot_vec) {
+//     std::vector<std::string> str_vec(lot_vec.size());
+//     std::transform(lot_vec.begin(), lot_vec.end(), str_vec.begin(),
+//                     [](const Lot& lot) { return lot.lot_name; });
+//     return str_vec;
+// }
+
+// std::vector<Lot> get_union_without_intersect(std::vector<std::vector<Lot>> input_vecs) {
+//     std::vector<std::string> vecs_union;
+//     std::vector<std::string> vecs_intersect;
+
+//     // Convert to strings 
+//     std::vector<std::vector<std::string>> str_vecs;
+//     for (const auto &vec : input_vecs) {
+//         str_vecs.push_back(get_lname_str_vec(vec));
+//     }
+
+//     // Get the union of the vecs
+//     for (const auto &vec : str_vecs) {
+//         for (const auto &elem : vec) {
+//             if (std::find(vecs_union.begin(), vecs_union.end(), elem) == vecs_union.end()) {
+//                 vecs_union.push_back(elem);
+//             }
+//         }
+//     }
+
+//     // Get the intersection
+//     vecs_intersect = str_vecs[0];
+//     // Sort the first vector to prepare for binary search
+//     std::sort(vecs_intersect.begin(), vecs_intersect.end());
+
+//     // Iterate through the remaining vectors
+//     for (size_t i = 1; i < str_vecs.size(); ++i) {
+//         std::vector<std::string> currentVector = str_vecs[i];
+//         std::sort(currentVector.begin(), currentVector.end());
+
+//         std::vector<std::string> tempVector;
+
+//         // Find the common elements using binary search
+//         std::set_intersection(vecs_intersect.begin(), vecs_intersect.end(),
+//                               currentVector.begin(), currentVector.end(),
+//                               std::back_inserter(tempVector));
+
+//         vecs_intersect = std::move(tempVector);
+//     }
+
+//     // Now go through union and only collect things not in intersection
+//     std::vector<std::string> u_without_i;
+//     for (const auto &elem : vecs_union) {
+//         if (std::find(vecs_intersect.begin(), vecs_intersect.end(), elem) == vecs_intersect.end()) {
+//             u_without_i.push_back(elem);
+//         }
+//     }
+
+//     return u_without_i;
+// }
+
 class Lot {
     public:
         // Non-object values used for lot initialization
@@ -29,14 +86,16 @@ class Lot {
         // Things that belong to the lot when including parent/child relationships
         std::string self_owner;
         std::vector<Lot> self_parents;
+        bool self_parents_loaded = false;
         std::vector<Lot> self_children;
-
+        bool self_children_loaded = false;
 
         // Things that belong to the lot when including parent/child relationships
         std::vector<std::string> recursive_owners;
         std::vector<Lot> recursive_parents;
+        bool recursive_parents_loaded = false;
         std::vector<Lot> recursive_children;
-
+        bool recursive_children_loaded = false;
 
         // management policy attributes
         struct {
@@ -120,13 +179,16 @@ class Lot {
         std::pair<bool, std::string> update_parents(json update_arr);
         std::pair<bool, std::string> update_paths(json update_arr);
         std::pair<bool, std::string> update_man_policy_attrs(std::string update_key, double update_val);
-        std::pair<bool, std::string> update_self_usage(const std::string key, const double value);
+        std::pair<bool, std::string> update_self_usage(const std::string key, const double value, bool deltaMode);
+        
+        std::pair<bool, std::string> recalculate_children_usage();
+        static std::pair<bool, std::string> update_db_children_usage();
         std::pair<bool, std::string> update_parent_usage(Lot parent,
                                                          std::string update_stmt, 
                                                          std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
                                                          std::map<int64_t, std::vector<int>> update_int_map =std::map<int64_t, std::vector<int>>(),
                                                          std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
-        static std::pair<bool, std::string> update_usage_by_dirs(json update_JSON);
+        static std::pair<bool, std::string> update_usage_by_dirs(json update_JSON, bool deltaMode);
         std::pair<bool, std::string> check_context_for_parents(std::vector<std::string> parents, bool include_self = false, bool new_lot = false);
         std::pair<bool, std::string> check_context_for_parents(std::vector<Lot> parents, bool include_self = false, bool new_lot = false);
 
@@ -147,7 +209,7 @@ class Lot {
         std::pair<bool, std::string> store_new_parents(std::vector<Lot> new_parents);
         std::pair<bool, std::string> store_updates(std::string update_query, 
                                                    std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
-                                                   std::map<int64_t, std::vector<int>> update_int_map =std::map<int64_t, std::vector<int>>(),
+                                                   std::map<int64_t, std::vector<int>> update_int_map = std::map<int64_t, std::vector<int>>(),
                                                    std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
         std::pair<bool, std::string> remove_parents_from_db(std::vector<std::string> parents);
         std::pair<bool, std::string> remove_paths_from_db(std::vector<std::string> paths);
@@ -298,13 +360,18 @@ public:
 class Context {
   public:
     Context() {}
-    static void set_caller(std::string caller) {
-        m_caller= caller;
-    }
-    static std::string get_caller() { return m_caller; }
+    static void set_caller(const std::string caller);
+    static std::pair<bool, std::string> set_lot_home(const std::string lot_home);
+
+    static std::string get_caller() { return *m_caller; }
+    static std::string get_lot_home() { return *m_home; }
 
   private:
-    static std::string m_caller;
+    static std::shared_ptr<std::string> m_caller;
+    static std::shared_ptr<std::string> m_home;
+
+    static std::vector<std::string> path_split(const std::string dir_path);
+    static std::pair<bool, std::string> mkdir_and_parents_if_needed(const std::string dir_path);
 };
 
 
