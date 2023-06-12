@@ -9,10 +9,17 @@
 
 
 /*
-Initialize context -- Default is empty
+Initialize some context globals 
 */
 
-std::string lotman::Context::m_caller{""};
+// caller
+std::shared_ptr<std::string> lotman::Context::m_caller =
+    std::make_shared<std::string>("");
+
+// Lot home
+std::shared_ptr<std::string> lotman::Context::m_home =
+    std::make_shared<std::string>("");
+
 
 using json = nlohmann::json;
 
@@ -546,7 +553,6 @@ int lotman_add_to_lot(const char *lotman_JSON_str, char **err_msg) {
             }
             return -1; 
             }
-
         }
 
         if (addition_obj.contains("paths")) {
@@ -994,15 +1000,15 @@ int lotman_get_lot_dirs(const char *lot_name,
     }
 }
 
-int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
+int lotman_update_lot_usage(const char *update_JSON_str, bool deltaMode, char **err_msg) {
     try {
         json update_usage_JSON = json::parse(update_JSON_str);
 
         // Validate the incoming JSON
         json_validator validator;
-        validator.set_root_schema(lotman_schemas::update_usage_schema);
+        validator.set_root_schema( deltaMode ? lotman_schemas::update_usage_delta_schema : lotman_schemas::update_usage_schema );
         validator.validate(update_usage_JSON);
-
+        
         // Assert lot exists
         auto rp = lotman::Lot::lot_exists(update_usage_JSON["lot_name"]);
         if (!rp.first) {
@@ -1035,7 +1041,7 @@ int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
 
         for (const auto &pair : update_usage_JSON.items()) {
             if (pair.key() != "lot_name") {
-                rp = lot.update_self_usage(pair.key(), pair.value());
+                rp = lot.update_self_usage(pair.key(), pair.value(), deltaMode);
                 if (!rp.first) { // There was an error
                     if (err_msg) {
                         std::string int_err = rp.second;
@@ -1057,16 +1063,13 @@ int lotman_update_lot_usage(const char *update_JSON_str, char **err_msg) {
     }
 }
 
-
-
-
-int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg) {
+int lotman_update_lot_usage_by_dir(const char *update_JSON_str, bool deltaMode, char **err_msg) {
     try {
         json update_JSON = json::parse(update_JSON_str);
 
         // Validate the incoming JSON
         json_validator validator;
-        validator.set_root_schema(lotman_schemas::update_usage_by_dir_schema);
+        validator.set_root_schema( deltaMode ? lotman_schemas::update_usage_by_dir_delta_schema : lotman_schemas::update_usage_by_dir_schema );
 
         // Current schema only works to validate each update obj.
         // Eventually, the schema should be updated to correctly work on the whole array
@@ -1074,7 +1077,7 @@ int lotman_update_lot_usage_by_dir(const char *update_JSON_str, char **err_msg) 
             validator.validate(update);
         }
         
-        auto rp = lotman::Lot::update_usage_by_dirs(update_JSON);
+        auto rp = lotman::Lot::update_usage_by_dirs(update_JSON, deltaMode);
 
         if (!rp.first) {
             if (err_msg) {
@@ -1121,6 +1124,16 @@ int lotman_get_lot_usage(const char *usage_attributes_JSON_str, char **output, c
             }
         }
 
+        auto rp_bool_str = lotman::Lot::update_db_children_usage();
+        if (!rp_bool_str.first) {
+            if (err_msg) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to update_db_children_usage()";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
         lotman::Lot lot(get_usage_obj["lot_name"].get<std::string>());
 
         json output_obj;
@@ -1161,7 +1174,7 @@ int lotman_check_db_health(char **err_msg) {
     return -1;
 }
 
-int lotman_set_context(const char *key, const char *value, char **err_msg) {
+int lotman_set_context_str(const char *key, const char *value, char **err_msg) {
     try {
         if (!key) {
             if (err_msg) {
@@ -1172,6 +1185,9 @@ int lotman_set_context(const char *key, const char *value, char **err_msg) {
 
         if (strcmp(key, "caller")==0) {
             lotman::Context::set_caller(value);
+        }
+        else if (strcmp(key, "lot_home")==0) {
+            lotman::Context::set_lot_home(value);
         }
 
         else {
@@ -1193,6 +1209,16 @@ int lotman_set_context(const char *key, const char *value, char **err_msg) {
 
 int lotman_get_lots_past_exp(const bool recursive, char ***output, char **err_msg) {
     try {
+        auto rp_bool_str = lotman::Lot::update_db_children_usage();
+        if (!rp_bool_str.first) {
+            if (err_msg) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to update_db_children_usage()";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
         auto rp = lotman::Lot::get_lots_past_exp(recursive);
         if (!rp.second.empty()) {
             if (err_msg) {
@@ -1231,6 +1257,16 @@ int lotman_get_lots_past_exp(const bool recursive, char ***output, char **err_ms
 
 int lotman_get_lots_past_del(const bool recursive, char ***output, char **err_msg) {
     try {
+        auto rp_bool_str = lotman::Lot::update_db_children_usage();
+        if (!rp_bool_str.first) {
+            if (err_msg) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to update_db_children_usage()";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+        
         auto rp = lotman::Lot::get_lots_past_del(recursive);
         if (!rp.second.empty()) {
             if (err_msg) {
@@ -1270,6 +1306,16 @@ int lotman_get_lots_past_del(const bool recursive, char ***output, char **err_ms
 
 int lotman_get_lots_past_opp(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
     try {
+        auto rp_bool_str = lotman::Lot::update_db_children_usage();
+        if (!rp_bool_str.first) {
+            if (err_msg) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to update_db_children_usage()";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
         auto rp = lotman::Lot::get_lots_past_opp(recursive_quota, recursive_children);
         if (!rp.second.empty()) {
             if (err_msg) {
@@ -1309,6 +1355,16 @@ int lotman_get_lots_past_opp(const bool recursive_quota, const bool recursive_ch
 
 int lotman_get_lots_past_ded(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
     try {
+        auto rp_bool_str = lotman::Lot::update_db_children_usage();
+        if (!rp_bool_str.first) {
+            if (err_msg) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to update_db_children_usage()";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
         auto rp = lotman::Lot::get_lots_past_ded(recursive_quota, recursive_children);
         if (!rp.second.empty()) {
             if (err_msg) {
@@ -1348,6 +1404,16 @@ int lotman_get_lots_past_ded(const bool recursive_quota, const bool recursive_ch
 
 int lotman_get_lots_past_obj(const bool recursive_quota, const bool recursive_children, char ***output, char **err_msg) {
     try {
+        auto rp_bool_str = lotman::Lot::update_db_children_usage();
+        if (!rp_bool_str.first) {
+            if (err_msg) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to update_db_children_usage()";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
+            return -1;
+        }
+
         auto rp = lotman::Lot::get_lots_past_obj(recursive_quota, recursive_children);
         if (!rp.second.empty()) {
             if (err_msg) {
@@ -1429,6 +1495,16 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
     try {
         if (!lot_name) {
             if (err_msg) {*err_msg = strdup("Name for the lot to be returned as JSON must not be nullpointer.");}
+            return -1;
+        }
+
+        auto rp_bool_str = lotman::Lot::update_db_children_usage();
+        if (!rp_bool_str.first) {
+            if (err_msg) {
+                std::string int_err = rp_bool_str.second;
+                std::string ext_err = "Failure on call to update_db_children_usage()";
+                *err_msg = strdup((ext_err + int_err).c_str());
+            }
             return -1;
         }
 

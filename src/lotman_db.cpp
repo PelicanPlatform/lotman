@@ -105,7 +105,14 @@ std::pair<bool, std::string> get_lot_file() {
         home_dir = result->pw_dir;
     }
 
-    std::string lot_home_dir(lot_env_dir ? lot_env_dir : home_dir.c_str());
+    std::string lot_home_dir;
+    std::string configured_lot_home_dir = lotman::Context::get_lot_home();
+    if (configured_lot_home_dir.length() > 0) { // The variable has been configured
+        lot_home_dir = configured_lot_home_dir;
+    } else {
+        lot_home_dir = lot_env_dir ? lot_env_dir : home_dir.c_str();
+    }
+
     if (lot_home_dir.size() == 0) {
         return std::make_pair(false, "Could not get Lot home");
     }
