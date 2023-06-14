@@ -1487,6 +1487,19 @@ std::pair<bool, std::string> lotman::Lot::update_usage_by_dirs(json update_JSON,
     }
 
     for (auto &lot : return_lots) {
+        // Since we don't know the lots beforehand, we have to check for their existence here.
+        auto exists = lot_exists(lot.lot_name);
+        if (!exists.second.empty()) {
+            std::string int_err = exists.second;
+            std::string ext_err = "Failed to check if lot exists: ";
+            return std::make_pair(false, ext_err + int_err);
+        }
+        
+        if (!exists.first) {
+            std::string err = "The lot " + lot.lot_name + " does not exist in the db, so it cannot be updated...";
+            return std::make_pair(false, err);
+        }
+        
         if (lot.usage.self_GB_update_staged) {
             auto rp_bool_str = lot.update_self_usage("self_GB", lot.usage.self_GB, deltaMode);
             if (!rp_bool_str.first) {
