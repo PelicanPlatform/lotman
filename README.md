@@ -34,3 +34,22 @@ Lot objects are comprised of several components:
 ## Example Usage Scenario
 
 One scenario in which LotMan's features becomes particularly relevant is in the case of data caches, where the desire is to be using as much system storage as possible (which is arguably the cache's job). In this case, the cache may be configured to start clearing files after storage use reaches a certain threshold, perhaps until storage use dips below a separate threshold -- a high watermark and low watermark scheme. If the cache is configured to use LotMan, then when it comes time to delete files, it can implement a priority-based deletion loop. For example, it may first ask LotMan for all the paths associated with lots past their deletion point, choosing to delete those files first. Until the low watermark has been reached, it may then ask for paths associated with lots past their expiration time, past their opportunistic storage, past their max number of objects, and past their dedicated storage. For each query, LotMan is capable of returning all of the paths associated with any lot that meets the supplied criteria, including whether to count children statistics toward the lot's quoats.
+
+## Building
+
+To build the LotMan library, the following dependencies are needed:
+- The `[nlohmann/json](https://github.com/nlohmann/json)` header-only library, which LotMan uses for working with JSON
+- The `[pboettch/json-schema-validator](https://github.com/pboettch/json-schema-validator)` header-only library, which LotMan uses for validating JSON schemas
+- `sqlite3`
+
+Once the repo is cloned, it can be built by following:
+```
+mkdir build
+cd build
+cmake ..
+make
+
+# only for installing on the system
+# make install
+```
+
