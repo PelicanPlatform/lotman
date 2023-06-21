@@ -38,8 +38,8 @@ One scenario in which LotMan's features becomes particularly relevant is in the 
 ## Building
 
 To build the LotMan library, the following dependencies are needed:
-- The `[nlohmann/json](https://github.com/nlohmann/json)` header-only library, which LotMan uses for working with JSON
-- The `[pboettch/json-schema-validator](https://github.com/pboettch/json-schema-validator)` header-only library, which LotMan uses for validating JSON schemas
+- The [nlohmann/json](https://github.com/nlohmann/json) header-only library, which LotMan uses for working with JSON
+- The [pboettch/json-schema-validator](https://github.com/pboettch/json-schema-validator) library, built on top of `nlohmann/json`, which LotMan uses for validating JSON schemas
 - `sqlite3`
 
 Once the repo is cloned, it can be built by following:
