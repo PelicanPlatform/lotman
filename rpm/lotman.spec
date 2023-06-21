@@ -14,6 +14,7 @@ URL: https://github.com/PelicanPlatform/lotman
 
 
 Source0: https://github.com/PelicanPlatform/lotman/releases/download/v%{version}/%{name}-%{version}.tar.gz
+Source1: json.hpp
 
 BuildRequires: gcc-c++
 BuildRequires: make
@@ -38,6 +39,8 @@ Requires: %{name}%{?_isa} = %{version}
 
 %prep
 %setup -q
+
+cp %{SOURCE1} .
 
 %build
 %cmake3
