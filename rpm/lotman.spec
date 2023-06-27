@@ -10,7 +10,7 @@ Summary: C++ Implementation of the LotMan Library
 License: Apache-2.0
 URL: https://github.com/PelicanPlatform/lotman
 
-Source0: https://github.com/PelicanPlatform/lotman/releases/download/v%{version}/%{name}-%{version}.tar.gz
+Source0: https://github.com/PelicanPlatform/lotman/releases/download/v%{version}/lotman-%{version}.tar.gz
 
 #############################################
 # Build dependencies                        #
