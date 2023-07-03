@@ -872,7 +872,7 @@ int lotman_get_policy_attributes(const char *policy_attributes_JSON_str,
         if (!rp.first) {
             if (err_msg) {
                 if (rp.second.empty()) { // function worked, but lot does not exist
-                    *err_msg = strdup("That was easy! The lot does not exist, so nothing can be added to it.");
+                    *err_msg = strdup("That was easy! The lot does not exist, so it has no policy attributes.");
                 }
                 else {
                     std::string int_err = rp.second;
