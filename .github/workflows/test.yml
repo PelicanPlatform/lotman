@@ -37,7 +37,7 @@ jobs:
           make -j `nproc` install
 
         git clone https://github.com/pboettch/json-schema-validator.git && \
-          cd json && mkdir build && \ cd build && \
+          cd json-schema-validator && mkdir build && \ cd build && \
           cmake .. && \
           make -j `nproc` install
         
