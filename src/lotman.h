@@ -2,9 +2,14 @@
  * Public header for the LotMan C Library
 */
 
+#include <memory>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// DB timeout
+extern std::shared_ptr<int> lotman_db_timeout;
 
 /*
 APIs
@@ -901,7 +906,7 @@ int lotman_get_lots_from_dir(const char *dir, const bool recursive, char ***outp
 
 int lotman_set_context_str(const char *key, const char *value, char **err_msg);
 /**
-    DESCRIPTION: 
+    DESCRIPTION: Provides access to setting various configuration/context values in LotMan
 
     RETURNS: Returns 0 on success. Any other values indicate an error.
 
@@ -919,6 +924,62 @@ int lotman_set_context_str(const char *key, const char *value, char **err_msg);
         A reference to a char array that can store any error messages.
 */
 
+int lotman_get_context_str(const char *key, char **output, char **err_msg);
+/**
+    DESCRIPTION: Provides access for getting various configuration/context values in LotMan
+
+    RETURNS: Returns 0 on success. Any other values indicate an error.
+
+    INPUTS:
+    key:
+        A string indicating which context key is being set. Currently, possible context keys are the "caller"
+        (ie identity of who's calling a LotMan function, needed in some cases when determining whether a
+        particular call should be allowed) and "lot_home", which is used for setting the location of the
+        generated LotMan SQLite database.
+
+    output:
+        A buffer for storing the output from the operation
+
+    err_msg:
+        A reference to a char array that can store any error messages.
+*/
+
+int lotman_set_context_int(const char *key, const int value, char **err_msg);
+/**
+    DESCRIPTION: Provides access for setting various configuration/context values in LotMan
+
+    RETURNS: Returns 0 on success. Any other values indicate an error.
+
+    INPUTS:
+    key:
+        A string indicating which context key is being set.
+
+    value:
+        The intended value to be assumed by whichever key is provided
+
+    err_msg:
+        A reference to a char array that can store any error messages.
+*/
+
+int lotman_get_context_int(const char *key, int *output, char **err_msg);
+/**
+    DESCRIPTION: Provides access for getting various configuration/context values in LotMan
+
+    RETURNS: Returns 0 on success. Any other values indicate an error.
+
+    INPUTS:
+    key:
+        A string indicating which context key is being set. Currently valid is "db_timeout", a
+        max value in milliseconds that the database should wait when trying to establish a lock
+        on the database. Can be tuned in multiprocess environments to eliminate any potential
+        sqlite error no. 5 complaints (SQLITE_BUSY)
+
+    output:
+        A buffer for storing the output from the operation
+
+    err_msg:
+        A reference to a char array that can store any error messages.
+*/
 
 //int lotman_get_matching_lots(const char *criteria_JSON, char ***output, char **err_msg);
 //int lotman_check_db_health(char **err_msg); // Should eventually check that data structure conforms to expectations. If there's a cycle or a non-self-parent root, something is wrong
