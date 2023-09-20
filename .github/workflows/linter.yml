@@ -3,7 +3,7 @@ name: Lint
 # Linter Action documentation at https://github.com/marketplace/actions/lint-action
 
 # One thing to note is that this action is currently configured automatically fix and re-push the linted code to the repo on a pull request.
-# Because the github token used for authenticating this commit comes from the upstream repo (ie scitokens/scitokens-cpp), those linter changes will not be pushed
+# Because the github token used for authenticating this commit comes from the upstream repo (ie pelicanplatform/lotman), those linter changes will not be pushed
 # to the fork that is providing the pull request. A manual git fetch will have to be run by the fork after the PR is merged to update the fork to the linted code.
 # The linter does not have authorization to lint any code in the repo's .github/workflows/ directory.
 
