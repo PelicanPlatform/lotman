@@ -32,14 +32,14 @@ jobs:
         sudo apt-get update && sudo apt-get install sqlite3 libsqlite3-dev cmake uuid-dev libgtest-dev
 
         git clone https://github.com/nlohmann/json.git && \
-          cd json && mkdir build && \ cd build && \
-          cmake .. && \
-          make -j `nproc` install
+        cd json && mkdir build && \ cd build && \
+        cmake .. && \
+        make -j `nproc` install
 
         git clone https://github.com/pboettch/json-schema-validator.git && \
-          cd json-schema-validator && mkdir build && \ cd build && \
-          cmake .. && \
-          make -j `nproc` install
+        cd json-schema-validator && mkdir build && \ cd build && \
+        cmake .. && \
+        make -j `nproc` install
         
 
     - name: Create Build Environment
