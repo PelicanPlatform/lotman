@@ -1,0 +1,61 @@
+name: C/C++ CI
+
+on:
+  pull_request:
+    branches: 
+      - main
+  push:
+    branches: 
+      - main
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: almalinux:9
+    name: Build on AlmaLinux 9
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install EPEL and OSG repositories
+      run: |
+        dnf -y install epel-release
+        dnf -y install https://repo.opensciencegrid.org/osg/25-main/osg-25-main-el9-release-latest.rpm
+
+    - name: Install dependencies
+      run: |
+        dnf -y groupinstall "Development Tools"
+        dnf -y install \
+          git \
+          cmake \
+          gcc-c++ \
+          gtest-devel \
+          sqlite-devel \
+          pkgconfig
+        dnf -y install --repo=osg \
+          nlohmann-json-devel \
+          json-schema-validator-devel
+        ldconfig
+
+    - name: Create Build Environment
+      run: cmake -E make_directory ${{github.workspace}}/build
+
+    - name: Configure CMake
+      shell: bash
+      working-directory: ${{github.workspace}}/build
+      run: cmake ${{github.workspace}} -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DLOTMAN_BUILD_UNITTESTS=on -DLOTMAN_EXTERNAL_GTEST=YES
+
+    - name: Build
+      working-directory: ${{github.workspace}}/build
+      shell: bash
+      run: cmake --build . --config $BUILD_TYPE
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      shell: bash
+      run: ctest -C $BUILD_TYPE --verbose
