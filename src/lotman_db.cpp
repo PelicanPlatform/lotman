@@ -5,6 +5,12 @@
 #include <unistd.h>
 
 #include "lotman_internal.h"
+#include "lotman.h"
+
+// We'll enable WAL mode by default because it makes the sqlite db more
+// friendly to a multiprocess environment and reduces locks and timeouts
+std::shared_ptr<bool> WAL =
+    std::make_shared<bool>(false);
 
 /*
 Code for initializing the sqlite database that stores important Lot object information
@@ -20,6 +26,21 @@ std::pair<bool, std::string> initialize_lotdb(const std::string &lot_file) {
         sqlite3_close(db);
         return std::make_pair(false, "SQLite Lot database creation failed.");
     }
+
+    // Enable WAL mode by executing a pragma statement
+    if (*WAL == false) {
+        const char *pragma_sql = "PRAGMA journal_mode = WAL;";
+        rc = sqlite3_exec(db, pragma_sql, 0, 0, 0);
+        if (rc != SQLITE_OK) {
+            fprintf(stderr, "Failed to enable WAL mode: %s\n", sqlite3_errmsg(db));
+            sqlite3_close(db);
+            return std::make_pair(false, "");
+        }
+
+        *WAL = true;
+    }
+
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
 
     char *err_msg = nullptr;
     rc = sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS owners ("
@@ -150,6 +171,8 @@ std::pair<bool, std::string> lotman::Lot::write_new() {
         sqlite3_close(db);
         return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
+
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
 
     sqlite3_stmt *owner_stmt;
     rc = sqlite3_prepare_v2(db, "INSERT INTO owners VALUES (?, ?)", -1, &owner_stmt, NULL);
@@ -409,6 +432,8 @@ std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
         return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
 
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
+
     // Delete from owners table
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, "DELETE FROM owners WHERE lot_name = ?;", -1, &stmt, NULL);
@@ -530,6 +555,8 @@ std::pair<bool, std::string> lotman::Lot::store_updates(std::string update_stmt,
         return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
 
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
+
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, update_stmt.c_str(), -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
@@ -594,6 +621,8 @@ std::pair<bool, std::string> lotman::Lot::store_new_paths(std::vector<json> new_
         return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
 
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
+
     for (const auto &path : new_paths) {
         sqlite3_stmt *stmt;
         rc = sqlite3_prepare_v2(db, "INSERT INTO paths VALUES (?, ?, ?)", -1, &stmt, NULL);
@@ -645,6 +674,8 @@ std::pair<bool, std::string> lotman::Lot::store_new_parents(std::vector<Lot> new
         return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
 
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
+
     for (const auto &parent : new_parents) {
         sqlite3_stmt *stmt;
         rc = sqlite3_prepare_v2(db, "INSERT INTO parents VALUES (?, ?)", -1, &stmt, NULL);
@@ -691,6 +722,8 @@ std::pair<bool, std::string> lotman::Lot::remove_parents_from_db( std::vector<st
         sqlite3_close(db);
         return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
+
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
 
     // Delete from parents table
     for (const auto &parent : parents) {
@@ -739,6 +772,8 @@ std::pair<bool, std::string> lotman::Lot::remove_paths_from_db(std::vector<std::
         sqlite3_close(db);
         return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
+
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
 
     // Delete from paths table
     for (const auto &path : paths) {
@@ -790,6 +825,8 @@ std::pair<std::vector<std::string>, std::string> lotman::Checks::SQL_get_matches
         sqlite3_close(db);
         return std::make_pair(return_vec, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
+
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
 
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, dynamic_query.c_str(), -1, &stmt, NULL);
@@ -862,6 +899,8 @@ std::pair<std::vector<std::vector<std::string>>, std::string> lotman::Checks::SQ
         sqlite3_close(db);
         return std::make_pair(return_vec, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
     }
+
+    sqlite3_busy_timeout(db, *lotman_db_timeout);
 
     sqlite3_stmt *stmt;
     rc = sqlite3_prepare_v2(db, dynamic_query.c_str(), -1, &stmt, NULL);
