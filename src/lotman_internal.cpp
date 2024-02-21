@@ -564,7 +564,7 @@ std::pair<json, std::string> lotman::Lot::get_restricting_attribute(const std::s
 }
 
 std::pair<json, std::string> lotman::Lot::get_lot_dirs(const bool recursive) {
-    json path_obj;
+    json path_arr = json::array();
     std::string path_query = "SELECT path, recursive FROM paths WHERE lot_name = ?;"; 
     //std::string recursive_query = "SELECT recursive FROM paths WHERE path = ? AND lot_name = ?;";
     std::map<std::string, std::vector<int>> path_query_str_map{{lot_name, {1}}};
@@ -572,14 +572,15 @@ std::pair<json, std::string> lotman::Lot::get_lot_dirs(const bool recursive) {
     if (!rp.second.empty()) { // There was an error
         std::string int_err = rp.second;
         std::string ext_err = "Failure on call to SQL_get_matches_multi_col: ";
-        return std::make_pair(path_obj, ext_err + int_err);
+        return std::make_pair(path_arr, ext_err + int_err);
     }
 
     for (const auto &path_rec : rp.first) { // the path is at index 0, and the recursion of the path is at index 1
         json path_obj_internal;
         path_obj_internal["lot_name"] = this->lot_name;
         path_obj_internal["recursive"] = static_cast<bool>(std::stoi(path_rec[1]));
-        path_obj[path_rec[0]] = path_obj_internal;
+        path_obj_internal["path"] = path_rec[0];
+        path_arr.push_back(path_obj_internal);
     }
 
     if (recursive) { // Not recursion of path, but recursion of dirs associated to a lot, ie the directories associated with lot proper's children
@@ -587,7 +588,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_dirs(const bool recursive) {
         if (!rp_vec_str.second.empty()) { // There was an error
             std::string int_err = rp_vec_str.second;
             std::string ext_err = "Failure to get children.";
-            return std::make_pair(json(), ext_err+int_err);
+            return std::make_pair(json::array(), ext_err+int_err);
         }
         for (const auto &child : recursive_children) {
             std::map<std::string, std::vector<int>> child_path_query_str_map{{child.lot_name, {1}}};
@@ -595,19 +596,20 @@ std::pair<json, std::string> lotman::Lot::get_lot_dirs(const bool recursive) {
             if (!rp.second.empty()) { // There was an error
                 std::string int_err = rp.second;
                 std::string ext_err = "Failure on call to SQL_get_matches_multi_col: ";
-                return std::make_pair(path_obj, ext_err + int_err);
+                return std::make_pair(path_arr, ext_err + int_err);
             }
 
             for (const auto &path_rec : rp.first) {
                 json path_obj_internal;
                 path_obj_internal["lot_name"] = child.lot_name;
                 path_obj_internal["recursive"] = static_cast<bool>(std::stoi(path_rec[1]));
-                path_obj[path_rec[0]] = path_obj_internal;
+                path_obj_internal["path"] = path_rec[0];
+                path_arr.push_back(path_obj_internal);
             }
         }
     }
     
-    return std::make_pair(path_obj, "");
+    return std::make_pair(path_arr, "");
 }
 
 std::pair<std::string, std::string> lotman::Lot::get_lot_from_dir(const std::string dir_path) {
