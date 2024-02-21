@@ -1460,11 +1460,29 @@ int lotman_list_all_lots(char ***output, char **err_msg) {
 }
 
 
+// Given a lot_name and a recursive flag, generate the lot's information and return it as JSON. Recursive in this case
+// indicates that we want to look up/down the tree of lots to determine the most restrictive values associated with parents/children.
 int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **output, char **err_msg) {
     try {
         if (!lot_name) {
             if (err_msg) {*err_msg = strdup("Name for the lot to be returned as JSON must not be nullpointer.");}
             return -1;
+        }
+
+        // Check for existence of the lot we're asking about
+        auto rp = lotman::Lot::lot_exists(lot_name);
+        if (!rp.first) {
+            if (err_msg) {
+                if (rp.second.empty()) { // function worked, but lot does not exist
+                    *err_msg = strdup("That was easy! The lot does not exist, so there's nothing to return.");
+                }
+                else {
+                    std::string int_err = rp.second;
+                    std::string ext_err = "Function call to lotman::Lot::lot_exists failed: ";
+                    *err_msg = strdup((ext_err + int_err).c_str());
+                }   
+            return -1;
+            }
         }
 
         auto rp_bool_str = lotman::Lot::update_db_children_usage();

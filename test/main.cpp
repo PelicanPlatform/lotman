@@ -1,5 +1,7 @@
 #include "../src/lotman.h"
 
+#include <cstdlib>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <iostream>
 #include <typeinfo>
@@ -8,10 +10,45 @@
 
 using json = nlohmann::json;
 
+// Test class to handle one-off setup and teardown for the entire test suite
+class LotManTest : public ::testing::Test {
+protected:
+    static std::string tmp_dir;
+
+    static std::string create_temp_directory() {
+        // Generate a unique name for the temporary directory
+        std::string temp_dir_template = "/tmp/lotman_test_XXXXXX";
+        char temp_dir_name[temp_dir_template.size() + 1];  // +1 for the null-terminator
+        std::strcpy(temp_dir_name, temp_dir_template.c_str());
+
+        // mkdtemp replaces 'X's with a unique directory name and creates the directory
+        char *mkdtemp_result = mkdtemp(temp_dir_name);
+        if (mkdtemp_result == nullptr) {
+            std::cerr << "Failed to create temporary directory\n";
+            exit(1);
+        }
+
+        return std::string(mkdtemp_result);
+    }
+
+    static void SetUpTestSuite() {
+        tmp_dir = create_temp_directory();
+        std::cout << "Tests will use the following temp dir: " << tmp_dir << std::endl;
+        char *err;
+        auto rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &err);
+    }
+
+    static void TearDownTestSuite() {
+        std::filesystem::remove_all(tmp_dir);
+    }
+};
+
+// Don't forget to define the static member outside the class
+std::string LotManTest::tmp_dir;
+
 namespace {
 
-
-    TEST(LotManTest, DefaultLotTests) {
+    TEST_F(LotManTest, DefaultLotTests) {
         char *err1;
         const char *lot1 = "{\"lot_name\": \"lot1\", \"owner\": \"owner1\",  \"parents\": [\"lot1\"],\"paths\": [{\"path\":\"/1/2/3\", \"recursive\":false},{\"path\":\"/foo/bar\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
         const char *default_lot = "{\"lot_name\": \"default\", \"owner\": \"owner2\",  \"parents\": [\"default\"],\"paths\": [{\"path\":\"/default/paths\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
@@ -33,7 +70,7 @@ namespace {
         free(err2);
     }
 
-    TEST(LotManTest, AddRemoveSublot) {
+    TEST_F(LotManTest, AddRemoveSublot) {
         char *err_msg;
         const char *lot1 = "{\"lot_name\": \"lot1\", \"owner\": \"owner1\",  \"parents\": [\"lot1\"],\"paths\": [{\"path\":\"1/2/3\", \"recursive\":false},{\"path\":\"/foo/bar\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
 
@@ -46,9 +83,15 @@ namespace {
 
         rv = lotman_lot_exists(deleted_lot, &err_msg);
         ASSERT_FALSE(rv) << err_msg;
+
+        // Try to remove a lot that doesn't exist
+        const char *non_existent_lot = "non_existent_lot";
+        rv = lotman_remove_lot(non_existent_lot, false, false, false, false, &err_msg);
+        ASSERT_FALSE(rv == 0) << err_msg;
+        free(err_msg);
     }
 
-    TEST(LotManTest, AddInvalidLots) {
+    TEST_F(LotManTest, AddInvalidLots) {
         char *err_msg;
 
         const char *lot1 = "{\"lot_name\": \"lot1\", \"owner\": \"owner1\",  \"parents\": [\"lot1\"],\"paths\": [{\"path\":\"/1/2/3\", \"recursive\":false},{\"path\":\"/foo/bar\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":20,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
@@ -89,7 +132,7 @@ namespace {
         free(err_msg2);
     }
 
-    TEST(LotManTest, InsertionTest) {
+    TEST_F(LotManTest, InsertionTest) {
         char *err_msg;
         const char *lot5 = "{\"lot_name\": \"lot5\",\"owner\":\"owner1\",\"parents\": [\"lot3\"],\"children\": [\"lot4\"],\"paths\": [{\"path\":\"/456\", \"recursive\":false},{\"path\":\"/567\", \"recursive\":true}],\"management_policy_attrs\": { \"dedicated_GB\":10,\"opportunistic_GB\":3.5,\"max_num_objects\":20,\"creation_time\":100,\"expiration_time\":200,\"deletion_time\":300}}";
         int rv = lotman_add_lot(lot5, &err_msg);
@@ -125,22 +168,30 @@ namespace {
         lotman_free_string_list(output2);
     }
 
-    TEST(LotManTest, ModifyLotTest) {
+    TEST_F(LotManTest, ModifyLotTest) {
+        // Try to modify a non-existent log
         char *err_msg;
-        const char *modified_lot = "{ \"lot_name\": \"lot3\", \"owner\": \"not owner1\",  \"parents\": [{\"current\":\"lot3\", \"new\":\"lot2\"}],  \"paths\": [{\"current\": \"/another/path\", \"new\": \"/another/path\", \"recursive\": true},{\"current\":\"/123\", \"new\" : \"/updated/path\", \"recursive\" : false}], \"management_policy_attrs\": { \"dedicated_GB\":10.111,\"opportunistic_GB\":6.6,\"max_num_objects\":50,\"expiration_time\":222,\"deletion_time\":333}}";
-        int rv = lotman_update_lot(modified_lot, &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
-
-        // Try to add a cycle --> this should fail
-        const char *modified_lot2 = "{ \"lot_name\": \"lot2\", \"parents\": [{\"current\":\"lot1\", \"new\":\"lot3\"}]}";
-        rv = lotman_update_lot(modified_lot2, &err_msg);
+        const char *non_existent_lot = "{ \"lot_name\": \"non_existent_lot\", \"owner\": \"owner1\",  \"parents\": [\"lot1\"],  \"paths\": [{\"path\":\"/1/2/3\", \"recursive\":false},{\"path\":\"/foo/bar\", \"recursive\":true}], \"management_policy_attrs\": { \"dedicated_GB\":5,\"opportunistic_GB\":2.5,\"max_num_objects\":100,\"creation_time\":123,\"expiration_time\":234,\"deletion_time\":345}}";
+        int rv = lotman_update_lot(non_existent_lot, &err_msg);
         ASSERT_FALSE(rv == 0);
         free(err_msg);
 
+        
         char *err_msg2;
-        char **owner_out;
-        rv = lotman_get_owners("lot3", false, &owner_out, &err_msg2);
+        const char *modified_lot = "{ \"lot_name\": \"lot3\", \"owner\": \"not owner1\",  \"parents\": [{\"current\":\"lot3\", \"new\":\"lot2\"}],  \"paths\": [{\"current\": \"/another/path\", \"new\": \"/another/path\", \"recursive\": true},{\"current\":\"/123\", \"new\" : \"/updated/path\", \"recursive\" : false}], \"management_policy_attrs\": { \"dedicated_GB\":10.111,\"opportunistic_GB\":6.6,\"max_num_objects\":50,\"expiration_time\":222,\"deletion_time\":333}}";
+        rv = lotman_update_lot(modified_lot, &err_msg2);
         ASSERT_TRUE(rv == 0) << err_msg2;
+
+        // Try to add a cycle --> this should fail
+        const char *modified_lot2 = "{ \"lot_name\": \"lot2\", \"parents\": [{\"current\":\"lot1\", \"new\":\"lot3\"}]}";
+        rv = lotman_update_lot(modified_lot2, &err_msg2);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg2);
+
+        char *err_msg3;
+        char **owner_out;
+        rv = lotman_get_owners("lot3", false, &owner_out, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
         
         bool check_old = false, check_new =  false;
         for (int iter = 0; owner_out[iter]; iter++) {
@@ -155,8 +206,8 @@ namespace {
         lotman_free_string_list(owner_out);
 
         char **parents_out;
-        rv = lotman_get_parent_names("lot3", false, true, &parents_out, &err_msg2);
-        ASSERT_TRUE(rv == 0) << err_msg2;
+        rv = lotman_get_parent_names("lot3", false, true, &parents_out, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
 
         check_old = false, check_new = false;
         for (int iter = 0; parents_out[iter]; iter++) {
@@ -171,63 +222,77 @@ namespace {
         lotman_free_string_list(parents_out);
 
         const char *addition_JSON = "{\"lot_name\":\"lot3\", \"paths\": [{\"path\":\"/foo/barr\", \"recursive\": true}], \"parents\" : [\"sep_node\"]}";
-        rv = lotman_add_to_lot(addition_JSON, &err_msg2);
-        ASSERT_TRUE(rv == 0) << err_msg2;
+        rv = lotman_add_to_lot(addition_JSON, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
 
         // Try to add a cycle --> this should fail
         const char *addition_JSON2 = "{ \"lot_name\": \"lot1\", \"parents\": [\"lot2\"]}";
-        rv = lotman_add_to_lot(addition_JSON2, &err_msg2);
-        ASSERT_FALSE(rv == 0);
-        free(err_msg2);
-
-        // Test removing parents
-        // Add default as parent to sep_node, then remove
-        char *err_msg3;
-        const char *addition_JSON3 = "{\"lot_name\":\"sep_node\", \"parents\": [\"default\"]}";
-        rv = lotman_add_to_lot(addition_JSON3, &err_msg3);
-        ASSERT_TRUE(rv == 0) << err_msg3;
-
-        // Try (and hopefully fail) to remove all of the parents and orphan the lot
-        const char *removal_JSON1 = "{\"lot_name\":\"sep_node\", \"parents\":[\"default\", \"sep_node\", \"non_existent_parent\"]}";
-        rv = lotman_rm_parents_from_lot(removal_JSON1, &err_msg3);
+        rv = lotman_add_to_lot(addition_JSON2, &err_msg3);
         ASSERT_FALSE(rv == 0);
         free(err_msg3);
 
+        // Test removing parents
+        // Add default as parent to sep_node, then remove
         char *err_msg4;
-        const char *removal_JSON2 = "{\"lot_name\":\"sep_node\", \"parents\":[\"default\"]}";
-        rv = lotman_rm_parents_from_lot(removal_JSON2, &err_msg4);
+        const char *addition_JSON3 = "{\"lot_name\":\"sep_node\", \"parents\": [\"default\"]}";
+        rv = lotman_add_to_lot(addition_JSON3, &err_msg4);
         ASSERT_TRUE(rv == 0) << err_msg4;
+
+        // Try (and hopefully fail) to remove all of the parents and orphan the lot
+        const char *removal_JSON1 = "{\"lot_name\":\"sep_node\", \"parents\":[\"default\", \"sep_node\", \"non_existent_parent\"]}";
+        rv = lotman_rm_parents_from_lot(removal_JSON1, &err_msg4);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg4);
+
+        char *err_msg5;
+        const char *removal_JSON2 = "{\"lot_name\":\"sep_node\", \"parents\":[\"default\"]}";
+        rv = lotman_rm_parents_from_lot(removal_JSON2, &err_msg5);
+        ASSERT_TRUE(rv == 0) << err_msg5;
 
         // Test adding paths to a few lots, then remove
         const char *addition_JSON4 = "{\"lot_name\":\"sep_node\", \"paths\":[{\"path\":\"/here/is/a/path\", \"recursive\": true}]}";
-        rv = lotman_add_to_lot(addition_JSON4, &err_msg4);
-        ASSERT_TRUE(rv == 0) << err_msg4;
+        rv = lotman_add_to_lot(addition_JSON4, &err_msg5);
+        ASSERT_TRUE(rv == 0) << err_msg5;
 
         const char *addition_JSON5 = "{\"lot_name\":\"lot1\", \"paths\":[{\"path\":\"/here/is/another/path\", \"recursive\": true}]}";
-        rv = lotman_add_to_lot(addition_JSON5, &err_msg4);
-        ASSERT_TRUE(rv == 0) << err_msg4;
+        rv = lotman_add_to_lot(addition_JSON5, &err_msg5);
+        ASSERT_TRUE(rv == 0) << err_msg5;
 
         const char *removal_JSON3 = "{\"paths\":[\"/here/is/a/path\", \"/path/does/not/exist\", \"/here/is/another/path\"]}";
-        rv = lotman_rm_paths_from_lots(removal_JSON3, &err_msg4);
-        ASSERT_TRUE(rv == 0) << err_msg4;
+        rv = lotman_rm_paths_from_lots(removal_JSON3, &err_msg5);
+        ASSERT_TRUE(rv == 0) << err_msg5;
     }
 
-    TEST(LotManTest, SetGetUsageTest) {
-        // Update by lot
+    TEST_F(LotManTest, SetGetUsageTest) {
+        // Update/Get usage for a lot that doesn't exist
         char *err_msg;
+        const char *non_existent_lot = "non_existent_lot";
         bool deltaMode = false;
+        const char *bad_usage_update_JSON = "{\"lot_name\":\"non_existent_lot\", \"self_GB\":10.5, \"self_objects\":4, \"self_GB_being_written\":2.2, \"self_objects_being_written\":2}";
+        int rv = lotman_update_lot_usage(bad_usage_update_JSON, deltaMode, &err_msg);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg);
+
+        char *err_msg2;
+        const char *bad_usage_query_JSON = "{\"lot_name\":\"non_existent_lot\", \"dedicated_GB\": true, \"opportunistic_GB\": true, \"total_GB\": true}";
+        char *output;
+        rv = lotman_get_lot_usage(bad_usage_query_JSON, &output, &err_msg2);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg2);
+
+        // Update by lot
+        char *err_msg3;
         const char *usage1_update_JSON = "{\"lot_name\":\"lot4\", \"self_GB\":10.5, \"self_objects\":4, \"self_GB_being_written\":2.2, \"self_objects_being_written\":2}";
-        int rv = lotman_update_lot_usage(usage1_update_JSON, deltaMode, &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        rv = lotman_update_lot_usage(usage1_update_JSON, deltaMode, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
 
         const char *usage2_update_JSON = "{\"lot_name\":\"lot5\",\"self_GB\":3.5, \"self_objects\":7, \"self_GB_being_written\":1.2, \"self_objects_being_written\":5}";
-        rv = lotman_update_lot_usage(usage2_update_JSON, deltaMode, &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        rv = lotman_update_lot_usage(usage2_update_JSON, deltaMode, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
 
-        char *output;
         const char *usage_query_JSON = "{\"lot_name\":\"lot5\", \"dedicated_GB\": true, \"opportunistic_GB\": true, \"total_GB\": true}";
-        rv = lotman_get_lot_usage(usage_query_JSON, &output, &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        rv = lotman_get_lot_usage(usage_query_JSON, &output, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
 
         json json_out = json::parse(output);
         ASSERT_TRUE(json_out["dedicated_GB"]["children_contrib"] == 6.5 && json_out["dedicated_GB"]["self_contrib"] == 3.5 && json_out["dedicated_GB"]["total"] == 10 &&
@@ -238,15 +303,15 @@ namespace {
 
         // Update by dir -- This ends up updating default, lot1 and lot4
         const char *update_JSON_str = "[{\"includes_subdirs\": true,\"num_obj\": 40,\"path\": \"/1/2/3\",\"size_GB\": 5.12,\"subdirs\": [{\"includes_subdirs\": true,\"num_obj\": 6,\"path\": \"4\",\"size_GB\": 3.14,\"subdirs\": [{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"5\",\"size_GB\": 1.6,\"subdirs\": []}]},{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"5/6\",\"size_GB\": 0.5,\"subdirs\": []},{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"6\",\"size_GB\": 0.25,\"subdirs\": []}]},{\"includes_subdirs\": true,\"num_obj\": 6,\"path\": \"foo/bar\",\"size_GB\": 9.153,\"subdirs\": [{\"includes_subdirs\": true,\"num_obj\": 0,\"path\": \"baz\",\"size_GB\": 5.35,\"subdirs\": [{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"more_more_files\",\"size_GB\": 2.2,\"subdirs\": []}]}]}]";
-        rv = lotman_update_lot_usage_by_dir(update_JSON_str, deltaMode, &err_msg);
+        rv = lotman_update_lot_usage_by_dir(update_JSON_str, deltaMode, &err_msg3);
 
-        ASSERT_TRUE(rv == 0) << err_msg;
+        ASSERT_TRUE(rv == 0) << err_msg3;
 
         // Check output for lot1
         const char *lot1_usage_query = "{\"lot_name\": \"lot1\", \"total_GB\":false, \"num_objects\":false}";
         char *lot1_output;
-        rv = lotman_get_lot_usage(lot1_usage_query, &lot1_output, &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        rv = lotman_get_lot_usage(lot1_usage_query, &lot1_output, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
         json lot1_json_out = json::parse(lot1_output);
         free(lot1_output);
         ASSERT_TRUE(lot1_json_out["total_GB"]["total"] == 10.383 && lot1_json_out["num_objects"]["total"] == 40);
@@ -254,8 +319,8 @@ namespace {
         // Check output for lot4
         const char *lot4_usage_query = "{\"lot_name\": \"lot4\", \"total_GB\":false, \"num_objects\":false}";
         char *lot4_output;
-        rv = lotman_get_lot_usage(lot4_usage_query, &lot4_output, &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        rv = lotman_get_lot_usage(lot4_usage_query, &lot4_output, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
         json lot4_json_out = json::parse(lot4_output);
         free(lot4_output);
         ASSERT_TRUE(lot4_json_out["total_GB"]["total"] == 3.14 && lot4_json_out["num_objects"]["total"] == 6);
@@ -263,7 +328,7 @@ namespace {
         // Check output for default
         const char *default_usage_query = "{\"lot_name\": \"default\", \"total_GB\":false, \"num_objects\":false}";
         char *default_output;
-        rv = lotman_get_lot_usage(default_usage_query, &default_output, &err_msg);
+        rv = lotman_get_lot_usage(default_usage_query, &default_output, &err_msg3);
         ASSERT_TRUE(rv == 0) << err_msg;
         json default_json_out = json::parse(default_output);
         free(default_output);
@@ -272,30 +337,37 @@ namespace {
         // Update by dir in delta mode -- This ends up updating lot4
         deltaMode = true;
         const char *update2_JSON_str = "[{\"includes_subdirs\": false,\"num_obj\": -3,\"path\": \"/1/2/3/4\",\"size_GB\": 2,\"subdirs\": []}]";
-        rv = lotman_update_lot_usage_by_dir(update2_JSON_str, deltaMode, &err_msg);
+        rv = lotman_update_lot_usage_by_dir(update2_JSON_str, deltaMode, &err_msg3);
 
-        ASSERT_TRUE(rv == 0) << err_msg;
+        ASSERT_TRUE(rv == 0) << err_msg3;
 
         // Check output for lot4
-        rv = lotman_get_lot_usage(lot4_usage_query, &lot4_output, &err_msg);
-        ASSERT_TRUE(rv == 0) << err_msg;
+        rv = lotman_get_lot_usage(lot4_usage_query, &lot4_output, &err_msg3);
+        ASSERT_TRUE(rv == 0) << err_msg3;
         lot4_json_out = json::parse(lot4_output);
         free(lot4_output);
         ASSERT_TRUE(lot4_json_out["total_GB"]["total"] == 5.14 && lot4_json_out["num_objects"]["total"] == 3) << lot4_json_out.dump();
 
         // Update by dir in delta mode, but attempt to make self_gb negative (should fail)
         const char *update3_JSON_str = "[{\"includes_subdirs\": false,\"num_obj\": 0,\"path\": \"/1/2/3/4\",\"size_GB\": -10,\"subdirs\": []}]";
-        rv = lotman_update_lot_usage_by_dir(update3_JSON_str, deltaMode, &err_msg);
-        ASSERT_FALSE(rv == 0) << err_msg;
-        free(err_msg);
+        rv = lotman_update_lot_usage_by_dir(update3_JSON_str, deltaMode, &err_msg3);
+        ASSERT_FALSE(rv == 0) << err_msg3;
+        free(err_msg3);
 }
 
-    TEST(LotManTest, GetOwnersTest) {
+    TEST_F(LotManTest, GetOwnersTest) {
+        // Try with a lot that doesn't exist
         char *err_msg;
-        const char *lot_name = "lot4";
+        const char *non_existent_lot = "non_existent_lot";
         const bool recursive = true;
         char **output;
-        int rv = lotman_get_owners(lot_name, recursive, &output, &err_msg);
+        int rv = lotman_get_owners(non_existent_lot, recursive, &output, &err_msg);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg);
+
+        char *err_msg2;
+        const char *lot_name = "lot4";
+        rv = lotman_get_owners(lot_name, recursive, &output, &err_msg2);
         ASSERT_TRUE(rv == 0);
         for (int iter = 0; output[iter]; iter++) {
             ASSERT_TRUE(static_cast<std::string>(output[iter]) == "owner1" || static_cast<std::string>(output[iter]) == "not owner1");
@@ -303,7 +375,7 @@ namespace {
         lotman_free_string_list(output);
     }
 
-    TEST(LotManTest, GetParentsTest) {
+    TEST_F(LotManTest, GetParentsTest) {
         char *err_msg;
         const char *lot_name = "lot4";
         const bool recursive = true;
@@ -319,13 +391,21 @@ namespace {
         lotman_free_string_list(output);
     }
 
-    TEST(LotManTest, GetChildrenTest) {
+    TEST_F(LotManTest, GetChildrenTest) {
+        // Try with a lot that doesn't exist
         char *err_msg;
-        const char *lot_name = "lot1";
+        const char *non_existent_lot = "non_existent_lot";
         const bool recursive = true;
         const bool get_self = false;
         char **output;
-        int rv = lotman_get_children_names(lot_name, recursive, get_self, &output, &err_msg);
+        int rv = lotman_get_children_names(non_existent_lot, recursive, get_self, &output, &err_msg);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg);
+
+        // Now test that checks for good output
+        char *err_msg2;
+        const char *lot_name = "lot1";
+        rv = lotman_get_children_names(lot_name, recursive, get_self, &output, &err_msg2);
         ASSERT_TRUE(rv == 0);
 
         for (int iter = 0; output[iter]; iter++) {
@@ -335,11 +415,25 @@ namespace {
         lotman_free_string_list(output);
     }
 
-    TEST(LotManTest, GetPolicyAttrs) {
+    TEST_F(LotManTest, GetPolicyAttrs) {
+        // Try to get policy attributes for a lot that doesn't exist
         char *err_msg;
-        const char *policy_attrs_JSON_str = "{\"lot_name\":\"lot4\", \"dedicated_GB\":true, \"opportunistic_GB\":true, \"max_num_objects\":true, \"creation_time\":true, \"expiration_time\":true, \"deletion_time\":true}";
+        const char *bad_policy_attrs_JSON = "{\"lot_name\":\"non_existent_lot\", \"dedicated_GB\":true, \"opportunistic_GB\":true, \"max_num_objects\":true, \"creation_time\":true, \"expiration_time\":true, \"deletion_time\":true}";
         char *output;
-        int rv = lotman_get_policy_attributes(policy_attrs_JSON_str, &output, &err_msg);
+        int rv = lotman_get_policy_attributes(bad_policy_attrs_JSON, &output, &err_msg);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg);
+
+        // Try with a key that doesn't exist
+        char *err_msg2;
+        const char *bad_policy_attrs_JSON2 = "{\"lot_name\":\"lot4\", \"bad_key\":true, \"opportunistic_GB\":true, \"max_num_objects\":true, \"creation_time\":true, \"expiration_time\":true, \"deletion_time\":true, \"non_existent_key\":true}";
+        rv = lotman_get_policy_attributes(bad_policy_attrs_JSON2, &output, &err_msg2);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg2);
+
+        char *err_msg3;
+        const char *policy_attrs_JSON_str = "{\"lot_name\":\"lot4\", \"dedicated_GB\":true, \"opportunistic_GB\":true, \"max_num_objects\":true, \"creation_time\":true, \"expiration_time\":true, \"deletion_time\":true}";
+        rv = lotman_get_policy_attributes(policy_attrs_JSON_str, &output, &err_msg3);
         ASSERT_TRUE(rv == 0) << err_msg;
 
         json json_out = json::parse(output);
@@ -352,12 +446,19 @@ namespace {
         free(output);
     }
 
-    TEST(LotManTest, GetLotDirs) {
+    TEST_F(LotManTest, GetLotDirs) {
+        // Try to get a lot that doesn't exist
         char *err_msg;
-        const char *lot_name = "lot5";
+        const char *non_existent_lot = "non_existent_lot";
         const bool recursive = true;
         char *output;
-        int rv = lotman_get_lot_dirs(lot_name, recursive, &output, &err_msg);
+        int rv = lotman_get_lot_dirs(non_existent_lot, recursive, &output, &err_msg);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg);
+
+        char *err_msg2;
+        const char *lot_name = "lot5";
+        rv = lotman_get_lot_dirs(lot_name, recursive, &output, &err_msg2);
         ASSERT_TRUE(rv == 0);
 
         json json_out = json::parse(output);
@@ -368,7 +469,7 @@ namespace {
         free(output);
     }
 
-    TEST(LotManTest, ContextTest) {
+    TEST_F(LotManTest, ContextTest) {
         // Any actions that modify the properties of a lot must have proper auth
         // These tests should all fail (context set to nonexistant owner)
         
@@ -408,7 +509,7 @@ namespace {
         free(err_msg4);
     }
 
-    TEST(LotManTest, LotsQueryTest) {
+    TEST_F(LotManTest, LotsQueryTest) {
         char *err_msg;
         char **output;
         // Check for lots past expiration
@@ -481,7 +582,7 @@ namespace {
         lotman_free_string_list(output5);
     }
 
-    TEST(LotManTest, GetAllLotsTest) {
+    TEST_F(LotManTest, GetAllLotsTest) {
         char *err_msg;
         char **output;
         auto rv = lotman_list_all_lots(&output, &err_msg);
@@ -491,10 +592,16 @@ namespace {
         lotman_free_string_list(output);
     }
 
-    TEST(LotManTest, GetLotJSONTest) {
+    TEST_F(LotManTest, GetLotJSONTest) {
+        // Try to get a lot that doesn't exist
         char *err_msg;
         char *output;
-        auto rv = lotman_get_lot_as_json("lot3", true, &output, &err_msg);
+        auto rv = lotman_get_lot_as_json("non_existent_lot", true, &output, &err_msg);
+        ASSERT_FALSE(rv == 0);
+        free(err_msg);
+
+        char *err_msg2;
+        rv = lotman_get_lot_as_json("lot3", true, &output, &err_msg);
         ASSERT_TRUE(rv == 0);
         json output_JSON = json::parse(output);
         free(output);
@@ -502,7 +609,7 @@ namespace {
         ASSERT_TRUE(output_JSON == expected_output);
     }
 
-    TEST(LotManTest, LotsFromDirTest) {
+    TEST_F(LotManTest, LotsFromDirTest) {
         char *err_msg;
         char **output;
         const char *dir = "/1/2/3/4"; // Get a path
@@ -526,7 +633,7 @@ namespace {
         lotman_free_string_list(output2);
     }
 
-    TEST(LotManTest, GetVersionTest) {
+    TEST_F(LotManTest, GetVersionTest) {
         const char *version = lotman_version();
         std::string version_cpp(version);
 
