@@ -698,7 +698,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
                 return std::make_pair(json(), ext_err + int_err);
             }
             query_output = rp_single.first;
-            output_obj["total"] = std::stod(query_output[0]);
+            output_obj["self_contrib"] = std::stod(query_output[0]);
         }
     }
 
@@ -759,7 +759,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
             return std::make_pair(json(), ext_err + int_err);
         }
         query_output = rp_single.first;
-        output_obj["total"] = std::stod(query_output[0]);
+        output_obj["self_contrib"] = std::stod(query_output[0]);
         }
     }
 
@@ -778,6 +778,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
             query_multi_out = rp_multi.first;
             output_obj["self_contrib"] = std::stod(query_multi_out[0][0]);
             output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
+            output_obj["total"] = std::stod(query_multi_out[0][0]) + std::stod(query_multi_out[0][1]);
         }
         else {
             std::string usage_GB_query = "SELECT self_GB FROM lot_usage WHERE lot_name = ?;";
@@ -789,7 +790,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
                 return std::make_pair(json(), ext_err + int_err);
             }
             query_output = rp_single.first;
-            output_obj["total"] = std::stod(query_output[0]);
+            output_obj["self_contrib"] = std::stod(query_output[0]);
         }
     }
     
@@ -806,6 +807,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
             query_multi_out = rp_multi.first;
             output_obj["self_contrib"] = std::stod(query_multi_out[0][0]);
             output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
+            output_obj["total"] = std::stod(query_multi_out[0][0]) + std::stod(query_multi_out[0][1]);
         }
         else {
 
@@ -818,7 +820,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
                 return std::make_pair(json(), ext_err + int_err);
             }
             query_output = rp_single.first;
-            output_obj["total"] = std::stod(query_output[0]);
+            output_obj["self_contrib"] = std::stod(query_output[0]);
         }
     }
 
@@ -835,6 +837,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
             query_multi_out = rp_multi.first;
             output_obj["self_contrib"] = std::stod(query_multi_out[0][0]);
             output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
+            output_obj["total"] = std::stod(query_multi_out[0][0]) + std::stod(query_multi_out[0][1]);
         }
         else {
 
@@ -847,7 +850,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
                 return std::make_pair(json(), ext_err + int_err);
             }
             query_output = rp_single.first;
-            output_obj["total"] = std::stod(query_output[0]);
+            output_obj["self_contrib"] = std::stod(query_output[0]);
         }
     }
     
@@ -864,6 +867,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
             query_multi_out = rp_multi.first;
             output_obj["self_contrib"] = std::stod(query_multi_out[0][0]);
             output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
+            output_obj["total"] = std::stod(query_multi_out[0][0]) + std::stod(query_multi_out[0][1]);
         }
         else {
 
@@ -876,7 +880,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string key, c
                 return std::make_pair(json(), ext_err + int_err);
             }
             query_output = rp_single.first;
-            output_obj["total"] = std::stod(query_output[0]);
+            output_obj["self_contrib"] = std::stod(query_output[0]);
         }
     }
 
