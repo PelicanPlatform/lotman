@@ -899,6 +899,10 @@ int lotman_get_policy_attributes(const char *policy_attributes_JSON_str,
                     }
                     return -1; 
                 }
+                if (pair.value() == "true") {
+                    // In this case, we unpack the returned object
+                    output_obj[pair.key()] = rp_json_bool.first["value"];
+                }
                 output_obj[pair.key()] = rp_json_bool.first;
             }
         }
@@ -1570,8 +1574,9 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
         // Add management policy attributes according to recursive flag
         std::array<std::string, 6> man_pol_keys = {"dedicated_GB", "opportunistic_GB", "max_num_objects", "creation_time", "deletion_time", "expiration_time"};
         json internal_man_pol_obj;
+        json internal_man_pol_obj_restrictive;
         for (const auto &key : man_pol_keys) {
-            rp_json_str = lot.get_restricting_attribute(key, recursive);
+            rp_json_str = lot.get_restricting_attribute(key, false);
             if (!rp_json_str.second.empty()) { // There was an error
                 if (err_msg) {
                     std::string int_err = rp_json_str.second;
@@ -1581,9 +1586,28 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
                 return -1;
             }
 
-            internal_man_pol_obj[key] = rp_json_str.first;
+            internal_man_pol_obj[key] = rp_json_str.first["value"];
+
+            if (recursive) {
+                rp_json_str = lot.get_restricting_attribute(key, true);
+                if (!rp_json_str.second.empty()) { // There was an error
+                    if (err_msg) {
+                        std::string int_err = rp_json_str.second;
+                        std::string ext_err = "Failure on call to get_restricting_attribute: ";
+                        *err_msg = strdup((ext_err + int_err).c_str());
+                    }
+                    return -1;
+                }
+
+
+                internal_man_pol_obj_restrictive[key] = rp_json_str.first;
+            }
         }
         output_obj["management_policy_attrs"] = internal_man_pol_obj;
+
+        if (recursive) {
+             output_obj["restrictive_management_policy_attrs"] = internal_man_pol_obj_restrictive;
+        }
 
         // Add usage according to recursive flag
         std::array<std::string, 6> usage_keys = {"dedicated_GB", "opportunistic_GB", "total_GB", "num_objects", "GB_being_written", "objects_being_written"};

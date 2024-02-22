@@ -555,6 +555,8 @@ std::pair<json, std::string> lotman::Lot::get_restricting_attribute(const std::s
             }
             internal_obj["lot_name"] = restricting_parent_name;
             internal_obj["value"] = std::stod(value[0]);
+        } else {
+            internal_obj["value"] = std::stod(value[0]);
         }
         return std::make_pair(internal_obj, "");
     }
