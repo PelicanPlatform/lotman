@@ -1522,7 +1522,7 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
             output_obj["owners"] = rp_vec_str.first;
         }
         else {
-            output_obj["owners"] = rp_vec_str.first[0]; // Only one owner, this is where it will be.
+            output_obj["owner"] = rp_vec_str.first[0]; // Only one owner, this is where it will be.
         }
         
         // Add parents according to recursive flag

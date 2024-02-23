@@ -619,7 +619,7 @@ namespace {
         ASSERT_TRUE(rv == 0) << err_msg;
         json output_JSON = json::parse(output);
         free(output);
-        json expected_output = R"({"children":["lot5"],"lot_name":"lot3","management_policy_attrs":{"creation_time":123.0,"dedicated_GB":10.111,"deletion_time":333.0,"expiration_time":222.0,"max_num_objects":50.0,"opportunistic_GB":6.6},"owners":"not owner1","parents":["lot2","sep_node"],"paths":[{"lot_name":"lot3","path":"/another/path","recursive":true},{"lot_name":"lot3","path":"/updated/path","recursive":false},{"lot_name":"lot3","path":"/foo/barr","recursive":true}],"usage":{"GB_being_written":{"self_contrib":0.0},"dedicated_GB":{"self_contrib":0.0},"num_objects":{"self_contrib":0.0},"objects_being_written":{"self_contrib":0.0},"opportunistic_GB":{"self_contrib":0.0},"total_GB":{"self_contrib":0.0}}})"_json;
+        json expected_output = R"({"children":["lot5"],"lot_name":"lot3","management_policy_attrs":{"creation_time":123.0,"dedicated_GB":10.111,"deletion_time":333.0,"expiration_time":222.0,"max_num_objects":50.0,"opportunistic_GB":6.6},"owner":"not owner1","parents":["lot2","sep_node"],"paths":[{"lot_name":"lot3","path":"/another/path","recursive":true},{"lot_name":"lot3","path":"/updated/path","recursive":false},{"lot_name":"lot3","path":"/foo/barr","recursive":true}],"usage":{"GB_being_written":{"self_contrib":0.0},"dedicated_GB":{"self_contrib":0.0},"num_objects":{"self_contrib":0.0},"objects_being_written":{"self_contrib":0.0},"opportunistic_GB":{"self_contrib":0.0},"total_GB":{"self_contrib":0.0}}})"_json;
         ASSERT_TRUE(output_JSON == expected_output) << output_JSON;
 
         char *output2;
