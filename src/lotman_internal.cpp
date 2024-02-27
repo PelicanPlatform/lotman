@@ -1820,7 +1820,9 @@ std::pair<std::vector<std::string>, std::string> lotman::Lot::list_all_lots() {
 
 std::pair<std::vector<std::string>, std::string> lotman::Lot::get_lots_from_dir(std::string dir, const bool recursive) {
     if (dir.back() == '/') { // Remove the character
-        dir.pop_back();
+        if (dir.length() > 1) {
+            dir.pop_back();
+        } 
     }
 
     std::string lots_from_dir_query =   "SELECT lot_name FROM paths " 
