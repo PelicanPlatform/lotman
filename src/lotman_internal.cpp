@@ -1521,7 +1521,7 @@ std::pair<bool, std::string> lotman::Lot::update_usage_by_dirs(json update_JSON,
             auto rp_bool_str = lot.update_self_usage("self_objects", lot.usage.self_objects, deltaMode);
             if (!rp_bool_str.first) {
                 std::string int_err = rp_bool_str.second;
-                std::string ext_err = "Failure to update lot's self_GB: ";
+                std::string ext_err = "Failure to update lot's self_objects: ";
                 return std::make_pair(false, ext_err + int_err);
             }
         }
@@ -1530,7 +1530,7 @@ std::pair<bool, std::string> lotman::Lot::update_usage_by_dirs(json update_JSON,
             auto rp_bool_str = lot.update_self_usage("self_GB_being_written", lot.usage.self_GB_being_written, deltaMode);
             if (!rp_bool_str.first) {
                 std::string int_err = rp_bool_str.second;
-                std::string ext_err = "Failure to update lot's self_GB: ";
+                std::string ext_err = "Failure to update lot's self_GB_being_written: ";
                 return std::make_pair(false, ext_err + int_err);
             }
         }
@@ -1539,7 +1539,7 @@ std::pair<bool, std::string> lotman::Lot::update_usage_by_dirs(json update_JSON,
             auto rp_bool_str = lot.update_self_usage("self_objects_being_written", lot.usage.self_objects_being_written, deltaMode);
             if (!rp_bool_str.first) {
                 std::string int_err = rp_bool_str.second;
-                std::string ext_err = "Failure to update lot's self_GB: ";
+                std::string ext_err = "Failure to update lot's self_objects_being_written: ";
                 return std::make_pair(false, ext_err + int_err);
             }
         }
