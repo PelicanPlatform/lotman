@@ -4,7 +4,7 @@
 %global srcname lotman
 
 Name: %srcname
-Version: 0.0.3
+Version: 0.0.4
 Release: 1%{?dist}
 Summary: C++ Implementation of the LotMan Library
 License: Apache-2.0
@@ -66,6 +66,9 @@ cd build
 %dir %{_includedir}/lotman
 
 %changelog
+* Wed Sep 18 2024 Justin Hiemstra <jhiemstra@wisc.edu> - 0.0.4-1
+- Add RPM specfile to project
+
 * Wed Sep 18 2024 Justin Hiemstra <jhiemstra@wisc.edu> - 0.0.3-1
 - Fixes for paths JSON data structure.
 - Error message cleanups.
