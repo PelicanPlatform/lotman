@@ -65,6 +65,7 @@ class LotManTest : public ::testing::Test {
 		if (rv != 0) {
 			std::cerr << "Failed to set caller: " << err2.get() << std::endl;
 			exit(1);
+		}
 	}
 
 	// Called after each test
