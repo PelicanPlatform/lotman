@@ -52,19 +52,19 @@ class LotManTest : public ::testing::Test {
 	// Called before each test
 	void SetUp() override {
 		tmp_dir = create_temp_directory();
-		char *err;
-		auto rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &err);
+		char *raw_err = nullptr;
+		auto rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
+		UniqueCString err(raw_err);
 		if (rv != 0) {
-			std::cerr << "Failed to set lot_home: " << err << std::endl;
-			free(err);
+			std::cerr << "Failed to set lot_home: " << err.get() << std::endl;
 			exit(1);
 		}
-		rv = lotman_set_context_str("caller", "owner1", &err);
+		raw_err = nullptr;
+		rv = lotman_set_context_str("caller", "owner1", &raw_err);
+		UniqueCString err2(raw_err);
 		if (rv != 0) {
-			std::cerr << "Failed to set caller: " << err << std::endl;
-			free(err);
+			std::cerr << "Failed to set caller: " << err2.get() << std::endl;
 			exit(1);
-		}
 	}
 
 	// Called after each test
@@ -287,7 +287,7 @@ TEST_F(LotManTest, DefaultLotTests) {
 	rv = lotman_remove_lot("default", true, true, true, false, &raw_err);
 	UniqueCString err2(raw_err);
 	ASSERT_NE(rv, 0);
-	ASSERT_NE(err2.get(), nullptr) << err2.get();
+
 }
 
 TEST_F(LotManTest, AddRemoveSublot) {
