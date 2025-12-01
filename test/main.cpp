@@ -286,8 +286,7 @@ TEST_F(LotManTest, DefaultLotTests) {
 	raw_err = nullptr;
 	rv = lotman_remove_lot("default", true, true, true, false, &raw_err);
 	UniqueCString err2(raw_err);
-	ASSERT_NE(rv, 0);
-
+	ASSERT_NE(rv, 0) << err2.get();
 }
 
 TEST_F(LotManTest, AddRemoveSublot) {
