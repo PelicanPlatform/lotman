@@ -45,19 +45,19 @@ jobs:
         ldconfig
 
     - name: Create Build Environment
-      run: cmake -E make_directory ${{github.workspace}}/build
+      run: mkdir -p build
 
     - name: Configure CMake
       shell: bash
-      working-directory: ${{github.workspace}}/build
-      run: cmake ${{github.workspace}} -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DLOTMAN_BUILD_UNITTESTS=on -DLOTMAN_EXTERNAL_GTEST=YES
+      working-directory: build
+      run: cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DLOTMAN_BUILD_UNITTESTS=on -DLOTMAN_EXTERNAL_GTEST=YES
 
     - name: Build
-      working-directory: ${{github.workspace}}/build
+      working-directory: build
       shell: bash
       run: cmake --build . --config $BUILD_TYPE
 
     - name: Test
-      working-directory: ${{github.workspace}}/build
+      working-directory: build
       shell: bash
       run: ctest -C $BUILD_TYPE --verbose
