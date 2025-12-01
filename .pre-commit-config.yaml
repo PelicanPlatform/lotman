@@ -1,0 +1,43 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+#
+# This pre-commit configuration mirrors the linting performed by the
+# GitHub Actions workflow in .github/workflows/linter.yml
+# Both use clang-format with -style=file (reads from .clang-format)
+repos:
+  # General file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # C++ formatting with clang-format
+  # Matches the GitHub Actions linter workflow configuration
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.4
+    hooks:
+      - id: clang-format
+        types_or: [c++, c]
+        args: ['-style=file']  # Reads from .clang-format file
+
+  # CMake formatting
+  - repo: https://github.com/cheshirekow/cmake-format-precommit
+    rev: v0.6.13
+    hooks:
+      - id: cmake-format
+        args: ['--config-files', '.cmake-format.yaml']
+
+  # Spell checking in comments and strings
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args: ['--skip', '*.json,*.lock', '--ignore-words-list', 'fo,te']
+        types_or: [c++, c, cmake, markdown, yaml]

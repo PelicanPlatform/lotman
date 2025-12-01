@@ -3,7 +3,6 @@
 using json = nlohmann::json;
 using json_validator = nlohmann::json_schema::json_validator;
 
-
 namespace lotman_schemas {
 
 json new_lot_schema = R"(
@@ -143,7 +142,7 @@ json lot_update_schema = R"(
                 "required": ["current", "new"]
             }
         },
-        
+
         "paths": {
             "description": "Array of path updates",
             "type": "array",
@@ -288,7 +287,7 @@ json lot_additions_schema = R"(
                 },
                 "required": ["path", "recursive"]
             }
-        }, 
+        },
 
         "parents": {
             "description": "Array of parents to assign to lot",
@@ -472,12 +471,12 @@ json update_usage_delta_schema = R"(
 }
 )"_json;
 /*
-NOTE: This schema only validates a single top level object, but does get the array of objects 
-      after "subdirs". To validate the top array of these objects, iterate through the array
-      and test against each object.
+NOTE: This schema only validates a single top level object, but does get the array of objects
+	  after "subdirs". To validate the top array of these objects, iterate through the array
+	  and test against each object.
 
 TODO: Fix this so it validates the top level array instead of validating each individualobject
-      in the array
+	  in the array
 */
 json update_usage_by_dir_schema = R"(
 {
@@ -555,4 +554,4 @@ json update_usage_by_dir_delta_schema = R"(
 }
 )"_json;
 
-} // namespace schemas
+} // namespace lotman_schemas

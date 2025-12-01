@@ -1,0 +1,42 @@
+# cmake-format configuration for LotMan
+
+# Line width
+line_width: 120
+
+# Indentation
+tab_size: 2
+use_tabchars: true
+
+# Formatting options
+separate_ctrl_name_with_space: false
+separate_fn_name_with_space: false
+dangle_parens: false
+dangle_align: prefix
+min_prefix_chars: 4
+max_prefix_chars: 10
+max_lines_hwrap: 2
+
+# Comment formatting
+line_ending: unix
+command_case: lower
+keyword_case: upper
+
+# Spacing
+max_pargs_hwrap: 6
+always_wrap: []
+
+# Markup
+enable_markup: true
+first_comment_is_literal: false
+literal_comment_pattern: null
+fence_pattern: ^\s*([`~]{3}[`~]*)(.*)$
+ruler_pattern: ^\s*[^\w\s]{3}.*[^\w\s]{3}$
+
+# Linting options
+parse:
+  additional_commands:
+    externalproject_add:
+      kwargs:
+        PREFIX: 1
+        URL: 1
+        INSTALL_COMMAND: 1
