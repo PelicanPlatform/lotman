@@ -43,7 +43,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Install ClangFormat
-        run: sudo apt-get install -y clang-format
+        run: |
+          # Install clang-format 19 to match pre-commit version
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -y clang-format-19
+          sudo ln -sf /usr/bin/clang-format-19 /usr/bin/clang-format
 
       - name: Run linters
         uses: wearerequired/lint-action@v2
