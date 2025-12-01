@@ -9,12 +9,12 @@ project(
 
 option(LOTMAN_BUILD_UNITTESTS "Build the lotman-cpp unit tests" OFF)
 option(LOTMAN_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF)
-    
+
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 
 set(CMAKE_BUILD_TYPE RelWithDebInfo) # -g -O2
-# set(CMAKE_C_FLAGS_DEBUG "-g -DDEBUG") 
-# set(CMAKE_CXX_GLAGS_DEBUG "-g -DDEBUG") 
+# set(CMAKE_C_FLAGS_DEBUG "-g -DDEBUG")
+# set(CMAKE_CXX_GLAGS_DEBUG "-g -DDEBUG")
 
 include(GNUInstallDirs)
 
@@ -26,7 +26,7 @@ if(APPLE)
 
 elseif( UNIX )
   include (FindPkgConfig)
-  
+
   pkg_check_modules(SQLITE REQUIRED sqlite3)
   find_package(nlohmann_json REQUIRED )
   find_package( nlohmann_json_schema_validator REQUIRED )
@@ -46,9 +46,9 @@ endif()
 
 get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
-  TARGETS ${TARGETS} 
+  TARGETS ${TARGETS}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} 
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
 
 install(
