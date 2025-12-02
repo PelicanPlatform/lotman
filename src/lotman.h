@@ -637,26 +637,6 @@ void lotman_free_string_list(char **str_list);
 		The array to be freed.
 */
 
-int lotman_get_lot_from_dir(const char *dir_name, char **output, char **err_msg);
-/**
-	DESCRIPTION: A function for determining the lot associated with a path. If the input path
-		is included recursively in another tracked path, the lot to which the recursive path is
-		assigned will be returned. If the input path is not tracked under any other paths, LotMan
-		will respond that the path belongs to the default lot.
-
-	RETURNS: Returns 0 on success. Any other values indicate an error.
-
-	INPUTS:
-	dir_name:
-		A string indicating the name of the path/dir/object whose lot ownership is to be determined.
-
-	output:
-		A reference to a char array that can store the associated lot as output.
-
-	err_msg:
-		A reference to a char array that can store any error messages.
-*/
-
 int lotman_get_lots_past_exp(const bool recursive, char ***output, char **err_msg);
 /**
 	DESCRIPTION: A function for determining all lots in the database that are past their expiration.

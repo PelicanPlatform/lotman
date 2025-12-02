@@ -628,6 +628,123 @@ TEST_F(LotManTest, ModifyLotTest) {
 	ASSERT_EQ(rv, 0) << err_msg.get();
 }
 
+TEST_F(LotManTest, RemovePathsAdvancedTest) {
+	setupStandardHierarchy();
+	char *raw_err = nullptr;
+
+	// Add multiple paths to lot1 (owned by owner1)
+	const char *add_paths = R"({
+		"lot_name": "lot1",
+		"paths": [
+			{"path": "/test/path1", "recursive": false},
+			{"path": "/test/path2", "recursive": true},
+			{"path": "/test/path3", "recursive": false}
+		]
+	})";
+	int rv = lotman_add_to_lot(add_paths, &raw_err);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Verify paths were added (lot1 originally has 2 paths)
+	char *raw_output = nullptr;
+	raw_err = nullptr;
+	rv = lotman_get_lot_dirs("lot1", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	UniqueCString output(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	json paths_before = json::parse(output.get());
+	ASSERT_EQ(paths_before.size(), 5); // 2 original + 3 new
+
+	// Remove multiple paths from same lot
+	const char *remove_multiple = R"({
+		"paths": ["/test/path1", "/test/path3"]
+	})";
+	raw_err = nullptr;
+	rv = lotman_rm_paths_from_lots(remove_multiple, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Verify paths were removed
+	raw_output = nullptr;
+	raw_err = nullptr;
+	rv = lotman_get_lot_dirs("lot1", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	json paths_after = json::parse(output.get());
+	ASSERT_EQ(paths_after.size(), 3); // 2 original + 1 remaining (/test/path2)
+
+	// Verify the correct path remains
+	bool found_path2 = false;
+	bool found_path1 = false;
+	bool found_path3 = false;
+	for (const auto &path_obj : paths_after) {
+		std::string path = path_obj["path"];
+		if (path == "/test/path2") {
+			found_path2 = true;
+		}
+		if (path == "/test/path1") {
+			found_path1 = true;
+		}
+		if (path == "/test/path3") {
+			found_path3 = true;
+		}
+	}
+	ASSERT_TRUE(found_path2);
+	ASSERT_FALSE(found_path1);
+	ASSERT_FALSE(found_path3);
+
+	// Try to remove path from a lot we don't own (should fail)
+	// First, change context to different owner
+	raw_err = nullptr;
+	rv = lotman_set_context_str("caller", "not_owner1", &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	const char *unauthorized_remove = R"({
+		"paths": ["/test/path2"]
+	})";
+	raw_err = nullptr;
+	rv = lotman_rm_paths_from_lots(unauthorized_remove, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_NE(rv, 0); // Should fail due to context check
+
+	// Restore context
+	raw_err = nullptr;
+	rv = lotman_set_context_str("caller", "owner1", &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Verify path was NOT removed (still 3 paths)
+	raw_output = nullptr;
+	raw_err = nullptr;
+	rv = lotman_get_lot_dirs("lot1", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	json paths_final = json::parse(output.get());
+	ASSERT_EQ(paths_final.size(), 3);
+
+	// Test with duplicate paths in removal list (should succeed, removing path once)
+	const char *duplicate_remove = R"({
+		"paths": ["/test/path2", "/test/path2"]
+	})";
+	raw_err = nullptr;
+	rv = lotman_rm_paths_from_lots(duplicate_remove, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Verify path2 is now gone
+	raw_output = nullptr;
+	raw_err = nullptr;
+	rv = lotman_get_lot_dirs("lot1", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	json paths_dup_test = json::parse(output.get());
+	ASSERT_EQ(paths_dup_test.size(), 2); // Back to original 2 paths
+}
+
 TEST_F(LotManTest, SetGetUsageTest) {
 	// Set up fresh database with full hierarchy (already includes default lot and lot5)
 	setupFullHierarchy();
