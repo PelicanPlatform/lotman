@@ -1,4 +1,4 @@
-add_executable(lotman-gtest main.cpp)
+add_executable(lotman-gtest main.cpp orm_tests.cpp)
 if( NOT LOTMAN_EXTERNAL_GTEST )
     add_dependencies(lotman-gtest gtest)
     include_directories("${PROJECT_SOURCE_DIR}/vendor/gtest/googletest/include")

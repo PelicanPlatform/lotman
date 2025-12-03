@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.14)
 project(
     Lotman
     DESCRIPTION "A C++ library to interface to LotMan"
@@ -11,6 +11,15 @@ option(LOTMAN_BUILD_UNITTESTS "Build the lotman-cpp unit tests" OFF)
 option(LOTMAN_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF)
 
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
+
+# Fetch sqlite_orm
+include(FetchContent)
+FetchContent_Declare(
+    sqlite_orm
+    GIT_REPOSITORY https://github.com/fnc12/sqlite_orm.git
+    GIT_TAG v1.8.2
+)
+FetchContent_MakeAvailable(sqlite_orm)
 
 set(CMAKE_BUILD_TYPE RelWithDebInfo) # -g -O2
 # set(CMAKE_C_FLAGS_DEBUG "-g -DDEBUG")
@@ -38,7 +47,7 @@ target_compile_features(LotMan PUBLIC cxx_std_17)
 configure_file(lotman_version.h.in lotman_version.h)
 include_directories("${PROJECT_BINARY_DIR}")
 
-target_link_libraries(LotMan PUBLIC ${SQLITE_LIBRARIES} nlohmann_json nlohmann_json_schema_validator)
+target_link_libraries(LotMan PUBLIC ${SQLITE_LIBRARIES} nlohmann_json nlohmann_json_schema_validator sqlite_orm::sqlite_orm)
 
 if (NOT APPLE AND UNIX)
   set_target_properties(LotMan PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")

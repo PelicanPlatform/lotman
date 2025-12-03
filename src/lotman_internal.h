@@ -146,7 +146,7 @@ class Lot {
 														  const bool assign_LTBR_parent_as_parent_to_non_orphans,
 														  const bool assign_policy_to_children);
 	void init_self_usage();
-	static std::pair<bool, std::string> lot_exists(std::string lot_name);
+	static std::pair<bool, std::string> lot_exists(const std::string &lot_name);
 	std::pair<bool, std::string> check_if_root();
 	std::pair<bool, std::string> store_lot();
 	std::pair<bool, std::string> destroy_lot();
@@ -158,41 +158,42 @@ class Lot {
 
 	std::pair<std::vector<std::string>, std::string> get_owners(const bool recursive = false);
 
-	std::pair<json, std::string> get_restricting_attribute(const std::string key, const bool recursive);
+	std::pair<json, std::string> get_restricting_attribute(const std::string &key, const bool recursive);
 
 	std::pair<json, std::string> get_lot_dirs(const bool recursive);
-	static std::pair<std::string, std::string> get_lot_from_dir(const std::string dir_path);
+	static std::pair<std::string, std::string> get_lot_from_dir(const std::string &dir_path);
 
-	std::pair<json, std::string> get_lot_usage(const std::string key, const bool recursive);
+	std::pair<json, std::string> get_lot_usage(const std::string &key, const bool recursive);
 
-	std::pair<bool, std::string> add_parents(std::vector<Lot> parents);
-	std::pair<bool, std::string> add_paths(std::vector<json> paths);
+	std::pair<bool, std::string> add_parents(const std::vector<Lot> &parents);
+	std::pair<bool, std::string> add_paths(const std::vector<json> &paths);
 
-	std::pair<bool, std::string> remove_parents(std::vector<std::string> parents);
-	std::pair<bool, std::string> remove_paths(std::vector<std::string> paths);
+	std::pair<bool, std::string> remove_parents(const std::vector<std::string> &parents);
+	std::pair<bool, std::string> remove_paths(const std::vector<std::string> &paths);
 
-	std::pair<bool, std::string> update_owner(std::string update_val);
-	std::pair<bool, std::string> update_parents(json update_arr);
-	std::pair<bool, std::string> update_paths(json update_arr);
-	std::pair<bool, std::string> update_man_policy_attrs(std::string update_key, double update_val);
-	std::pair<bool, std::string> update_self_usage(const std::string key, const double value, bool deltaMode);
+	std::pair<bool, std::string> update_owner(const std::string &update_val);
+	std::pair<bool, std::string> update_parents(const json &update_arr);
+	std::pair<bool, std::string> update_paths(const json &update_arr);
+	std::pair<bool, std::string> update_man_policy_attrs(const std::string &update_key, double update_val);
+	std::pair<bool, std::string> update_self_usage(const std::string &key, const double value, bool deltaMode);
 
 	std::pair<bool, std::string> recalculate_children_usage();
 	static std::pair<bool, std::string> update_db_children_usage();
 	std::pair<bool, std::string> update_parent_usage(
-		Lot parent, std::string update_stmt,
-		std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
-		std::map<int64_t, std::vector<int>> update_int_map = std::map<int64_t, std::vector<int>>(),
-		std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
-	static std::pair<bool, std::string> update_usage_by_dirs(json update_JSON, bool deltaMode);
-	std::pair<bool, std::string> check_context_for_parents(std::vector<std::string> parents, bool include_self = false,
-														   bool new_lot = false);
-	std::pair<bool, std::string> check_context_for_parents(std::vector<Lot> parents, bool include_self = false,
+		Lot parent, const std::string &update_stmt,
+		const std::map<std::string, std::vector<int>> &update_str_map = std::map<std::string, std::vector<int>>(),
+		const std::map<int64_t, std::vector<int>> &update_int_map = std::map<int64_t, std::vector<int>>(),
+		const std::map<double, std::vector<int>> &update_dbl_map = std::map<double, std::vector<int>>());
+	static std::pair<bool, std::string> update_usage_by_dirs(const json &update_JSON, bool deltaMode);
+	std::pair<bool, std::string> check_context_for_parents(const std::vector<std::string> &parents,
+														   bool include_self = false, bool new_lot = false);
+	std::pair<bool, std::string> check_context_for_parents(const std::vector<Lot> &parents, bool include_self = false,
 														   bool new_lot = false);
 
-	std::pair<bool, std::string> check_context_for_children(std::vector<std::string> children,
+	std::pair<bool, std::string> check_context_for_children(const std::vector<std::string> &children,
 															bool include_self = false);
-	std::pair<bool, std::string> check_context_for_children(std::vector<Lot> children, bool include_self = false);
+	std::pair<bool, std::string> check_context_for_children(const std::vector<Lot> &children,
+															bool include_self = false);
 	static std::pair<std::vector<std::string>, std::string> get_lots_past_exp(const bool recursive);
 	static std::pair<std::vector<std::string>, std::string> get_lots_past_del(const bool recursive);
 	static std::pair<std::vector<std::string>, std::string> get_lots_past_opp(const bool recursive_quota,
@@ -202,20 +203,21 @@ class Lot {
 	static std::pair<std::vector<std::string>, std::string> get_lots_past_obj(const bool recursive_quota,
 																			  const bool recursive_children);
 	static std::pair<std::vector<std::string>, std::string> list_all_lots();
-	static std::pair<std::vector<std::string>, std::string> get_lots_from_dir(std::string dir, const bool recursive);
+	static std::pair<std::vector<std::string>, std::string> get_lots_from_dir(const std::string &dir,
+																			  const bool recursive);
 
   private:
 	std::pair<bool, std::string> write_new();
 	std::pair<bool, std::string> delete_lot_from_db();
-	std::pair<bool, std::string> store_new_paths(std::vector<json> new_paths);
-	std::pair<bool, std::string> store_new_parents(std::vector<Lot> new_parents);
-	std::pair<bool, std::string>
-	store_updates(std::string update_query,
-				  std::map<std::string, std::vector<int>> update_str_map = std::map<std::string, std::vector<int>>(),
-				  std::map<int64_t, std::vector<int>> update_int_map = std::map<int64_t, std::vector<int>>(),
-				  std::map<double, std::vector<int>> update_dbl_map = std::map<double, std::vector<int>>());
-	std::pair<bool, std::string> remove_parents_from_db(std::vector<std::string> parents);
-	std::pair<bool, std::string> remove_paths_from_db(std::vector<std::string> paths);
+	std::pair<bool, std::string> store_new_paths(const std::vector<json> &new_paths);
+	std::pair<bool, std::string> store_new_parents(const std::vector<Lot> &new_parents);
+	std::pair<bool, std::string> store_updates(
+		const std::string &update_query,
+		const std::map<std::string, std::vector<int>> &update_str_map = std::map<std::string, std::vector<int>>(),
+		const std::map<int64_t, std::vector<int>> &update_int_map = std::map<int64_t, std::vector<int>>(),
+		const std::map<double, std::vector<int>> &update_dbl_map = std::map<double, std::vector<int>>());
+	std::pair<bool, std::string> remove_parents_from_db(const std::vector<std::string> &parents);
+	std::pair<bool, std::string> remove_paths_from_db(const std::vector<std::string> &paths);
 };
 
 class DirUsageUpdate : public Lot {
@@ -386,38 +388,16 @@ class Context {
  */
 
 class Checks {
-	// friend class lotman::Lot;
 	friend class lotman::Lot;
 
   public:
 	static bool
-	cycle_check(std::string start_node, std::vector<std::string> start_parents,
-				std::vector<std::string> start_children); // Only checks for cycles that return to start_node. Returns
-														  // true if cycle found, false otherwise
-	static bool insertion_check(std::string LTBA, std::string parent,
-								std::string child); // Check if lot-to-be-added (LTBA) is being inserted between a
-													// parent/child, which should update data for the child
-	static bool will_be_orphaned(std::string LTBR, std::string child);
-
-  private:
-	// static std::vector<std::string> SQL_get_matches(std::string dynamic_query, std::map<std::string,
-	// std::vector<int>> str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map =
-	// std::map<int, std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double,
-	// std::vector<int>>()); // returns vector of matches to input query static std::vector<std::vector<std::string>>
-	// SQL_get_matches_multi_col(std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>>
-	// str_map = std::map<std::string, std::vector<int>>(), std::map<int,std::vector<int>> int_map = std::map<int,
-	// std::vector<int>>(), std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>()); //
-	// returns vector of matches to input query
-	static std::pair<std::vector<std::string>, std::string>
-	SQL_get_matches(std::string dynamic_query,
-					std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(),
-					std::map<int64_t, std::vector<int>> int_map = std::map<int64_t, std::vector<int>>(),
-					std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
-	static std::pair<std::vector<std::vector<std::string>>, std::string> SQL_get_matches_multi_col(
-		std::string dynamic_query, int num_returns,
-		std::map<std::string, std::vector<int>> str_map = std::map<std::string, std::vector<int>>(),
-		std::map<int64_t, std::vector<int>> int_map = std::map<int64_t, std::vector<int>>(),
-		std::map<double, std::vector<int>> double_map = std::map<double, std::vector<int>>());
+	cycle_check(const std::string &start_node, const std::vector<std::string> &start_parents,
+				const std::vector<std::string> &start_children); // Only checks for cycles that return to start_node.
+																 // Returns true if cycle found, false otherwise
+	static bool insertion_check(const std::string &LTBA, const std::string &parent,
+								const std::string &child); // Check if lot-to-be-added (LTBA) is being inserted between
+														   // a parent/child, which should update data for the child
+	static bool will_be_orphaned(const std::string &LTBR, const std::string &child);
 };
-
 } // namespace lotman
