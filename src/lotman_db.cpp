@@ -145,6 +145,8 @@ sqlite3 *ConnectionPool::acquire() {
 		return nullptr;
 	}
 
+	// Enable WAL mode for better concurrency across processes
+	sqlite3_exec(conn, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
 	sqlite3_busy_timeout(conn, *lotman_db_timeout);
 	return conn;
 }
@@ -384,6 +386,8 @@ ScopedConnection::ScopedConnection(TransactionType txn_type) {
 		return;
 	}
 
+	// Enable WAL mode for better concurrency across processes
+	sqlite3_exec(m_db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
 	sqlite3_busy_timeout(m_db, *lotman_db_timeout);
 
 	// Begin transaction if requested

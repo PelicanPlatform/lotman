@@ -162,7 +162,11 @@ class StorageManager {
 	static std::pair<bool, std::string> get_db_path();
 
 	/**
-	 * Reset the storage (useful for testing or re-initialization)
+	 * Reset the storage (useful for testing or re-initialization).
+	 *
+	 * WARNING: Not thread-safe. Only call when no other threads are using
+	 * the database (e.g., during test setup or application shutdown).
+	 * Clears the connection pool and statement cache before resetting storage.
 	 */
 	static void reset();
 

@@ -1939,15 +1939,14 @@ std::pair<bool, std::string> lotman::Lot::check_context_for_parents(const std::v
 		}
 		for (const auto &parent : parents) {
 			if (parent.lot_name != lot_name) {
-				Lot parent_copy(parent.lot_name); // Need non-const copy to call get_owners
-				auto rp = parent_copy.get_owners(true);
-				if (!rp.second.empty()) { // There was an error
-					std::string int_err = rp.second;
-					std::string ext_err = "Failed to get parent owners while checking validity of context: ";
-					return std::make_pair(false, ext_err + int_err);
+				Lot temp_lot(parent.lot_name);
+				auto rp = temp_lot.get_owners(true);
+				if (!rp.second.empty()) {
+					return std::make_pair(false, "Failed to get parent owners while checking validity of context: " +
+													 rp.second);
 				}
-				if (std::find(parent_copy.recursive_owners.begin(), parent_copy.recursive_owners.end(), caller) !=
-					parent_copy.recursive_owners.end()) { // Caller is an owner
+				const auto &owners = rp.first;
+				if (std::find(owners.begin(), owners.end(), caller) != owners.end()) {
 					allowed = true;
 					break;
 				}
@@ -1955,15 +1954,14 @@ std::pair<bool, std::string> lotman::Lot::check_context_for_parents(const std::v
 		}
 	} else {
 		for (const auto &parent : parents) {
-			Lot parent_copy(parent.lot_name); // Need non-const copy to call get_owners
-			auto rp = parent_copy.get_owners(true);
-			if (!rp.second.empty()) { // There was an error
-				std::string int_err = rp.second;
-				std::string ext_err = "Failed to get parent owners while checking validity of context: ";
-				return std::make_pair(false, ext_err + int_err);
+			Lot temp_lot(parent.lot_name);
+			auto rp = temp_lot.get_owners(true);
+			if (!rp.second.empty()) {
+				return std::make_pair(false,
+									  "Failed to get parent owners while checking validity of context: " + rp.second);
 			}
-			if (std::find(parent_copy.recursive_owners.begin(), parent_copy.recursive_owners.end(), caller) !=
-				parent_copy.recursive_owners.end()) { // Caller is an owner
+			const auto &owners = rp.first;
+			if (std::find(owners.begin(), owners.end(), caller) != owners.end()) {
 				allowed = true;
 				break;
 			}
@@ -2031,15 +2029,14 @@ std::pair<bool, std::string> lotman::Lot::check_context_for_children(const std::
 	if (!include_self) {
 		for (const auto &child : children) {
 			if (child.lot_name != lot_name) {
-				Lot child_copy(child.lot_name); // Need non-const copy to call get_owners
-				auto rp = child_copy.get_owners(true);
-				if (!rp.second.empty()) { // There was an error
-					std::string int_err = rp.second;
-					std::string ext_err = "Failed to get child owners while checking validity of context: ";
-					return std::make_pair(false, ext_err + int_err);
+				Lot temp_lot(child.lot_name);
+				auto rp = temp_lot.get_owners(true);
+				if (!rp.second.empty()) {
+					return std::make_pair(false, "Failed to get child owners while checking validity of context: " +
+													 rp.second);
 				}
-				if (std::find(child_copy.recursive_owners.begin(), child_copy.recursive_owners.end(), caller) !=
-					child_copy.recursive_owners.end()) { // Caller is an owner
+				const auto &owners = rp.first;
+				if (std::find(owners.begin(), owners.end(), caller) != owners.end()) {
 					allowed = true;
 					break;
 				}
@@ -2047,15 +2044,14 @@ std::pair<bool, std::string> lotman::Lot::check_context_for_children(const std::
 		}
 	} else {
 		for (const auto &child : children) {
-			Lot child_copy(child.lot_name); // Need non-const copy to call get_owners
-			auto rp = child_copy.get_owners(true);
-			if (!rp.second.empty()) { // There was an error
-				std::string int_err = rp.second;
-				std::string ext_err = "Failed to get child owners while checking validity of context: ";
-				return std::make_pair(false, ext_err + int_err);
+			Lot temp_lot(child.lot_name);
+			auto rp = temp_lot.get_owners(true);
+			if (!rp.second.empty()) {
+				return std::make_pair(false,
+									  "Failed to get child owners while checking validity of context: " + rp.second);
 			}
-			if (std::find(child_copy.recursive_owners.begin(), child_copy.recursive_owners.end(), caller) !=
-				child_copy.recursive_owners.end()) { // Caller is an owner
+			const auto &owners = rp.first;
+			if (std::find(owners.begin(), owners.end(), caller) != owners.end()) {
 				allowed = true;
 				break;
 			}
