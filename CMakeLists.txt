@@ -13,23 +13,24 @@ option(LOTMAN_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 
 set(CMAKE_BUILD_TYPE RelWithDebInfo) # -g -O2
-# set(CMAKE_C_FLAGS_DEBUG "-g -DDEBUG")
-# set(CMAKE_CXX_GLAGS_DEBUG "-g -DDEBUG")
 
 include(GNUInstallDirs)
 
+# Allow user to override library install directory
+set(LIB_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}" CACHE PATH "Installation directory for libraries")
+
 if(APPLE)
-  find_package( Sqlite3 REQUIRED )
-  find_package( nlohmann_json REQUIRED )
-  find_package( nlohmann_json_schema_validator REQUIRED )
+  find_package(Sqlite3 REQUIRED)
+  find_package(nlohmann_json REQUIRED)
+  find_package(nlohmann_json_schema_validator REQUIRED)
   set(CMAKE_MACOSX_RPATH ON)
 
-elseif( UNIX )
+elseif(UNIX)
   include (FindPkgConfig)
 
   pkg_check_modules(SQLITE REQUIRED sqlite3)
-  find_package(nlohmann_json REQUIRED )
-  find_package( nlohmann_json_schema_validator REQUIRED )
+  find_package(nlohmann_json REQUIRED)
+  find_package(nlohmann_json_schema_validator REQUIRED)
 endif()
 
 add_library(LotMan SHARED src/lotman.cpp src/lotman_db.cpp src/lotman_internal.cpp)
@@ -44,12 +45,11 @@ if (NOT APPLE AND UNIX)
   set_target_properties(LotMan PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 endif()
 
-get_directory_property(TARGETS BUILDSYSTEM_TARGETS)
 install(
-  TARGETS ${TARGETS}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  TARGETS LotMan
+  LIBRARY DESTINATION ${LIB_INSTALL_DIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  )
+)
 
 install(
   FILES src/lotman.h
