@@ -1,3 +1,13 @@
+/**
+ * Database operations for LotMan using sqlite_orm
+ *
+ * This file implements all database CRUD operations using the ORM layer.
+ * Complex queries that aren't easily expressed in the ORM can still use
+ * raw SQL via storage.execute().
+ */
+
+#include "lotman_db.h"
+
 #include "lotman.h"
 #include "lotman_internal.h"
 
@@ -7,117 +17,27 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// We'll enable WAL mode by default because it makes the sqlite db more
-// friendly to a multiprocess environment and reduces locks and timeouts
-std::shared_ptr<bool> WAL = std::make_shared<bool>(false);
+using namespace sqlite_orm;
 
-/*
-Code for initializing the sqlite database that stores important Lot object information
+namespace lotman {
+namespace db {
 
-*/
+// Static member definitions
+std::unique_ptr<Storage> StorageManager::m_storage = nullptr;
+bool StorageManager::m_initialized = false;
+bool StorageManager::m_wal_enabled = false;
 
-namespace {
+// Connection pool static members
+std::vector<sqlite3 *> ConnectionPool::m_pool;
+std::mutex ConnectionPool::m_mutex;
+size_t ConnectionPool::m_max_size = 5;
 
-std::pair<bool, std::string> initialize_lotdb(const std::string &lot_file) {
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_file.c_str(), &db);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false, "SQLite Lot database creation failed.");
-	}
+// Prepared statement cache static members
+std::unordered_map<sqlite3 *, std::unordered_map<std::string, sqlite3_stmt *>> PreparedStatementCache::m_cache;
+std::mutex PreparedStatementCache::m_mutex;
 
-	// Enable WAL mode by executing a pragma statement
-	if (*WAL == false) {
-		const char *pragma_sql = "PRAGMA journal_mode = WAL;";
-		rc = sqlite3_exec(db, pragma_sql, 0, 0, 0);
-		if (rc != SQLITE_OK) {
-			fprintf(stderr, "Failed to enable WAL mode: %s\n", sqlite3_errmsg(db));
-			sqlite3_close(db);
-			return std::make_pair(false, "");
-		}
-
-		*WAL = true;
-	}
-
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
-
-	char *err_msg = nullptr;
-	rc = sqlite3_exec(db,
-					  "CREATE TABLE IF NOT EXISTS owners ("
-					  "lot_name PRIMARY KEY NOT NULL,"
-					  "owner NOT NULL)",
-					  NULL, 0, &err_msg);
-	if (rc) {
-		auto rp = std::make_pair(false, "SQLite owners table creation failed: " + static_cast<std::string>(err_msg));
-		sqlite3_free(err_msg);
-		return rp;
-	}
-
-	rc = sqlite3_exec(db,
-					  "CREATE TABLE IF NOT EXISTS parents ("
-					  "lot_name NOT NULL,"
-					  "parent NOT NULL,"
-					  "PRIMARY KEY (lot_name, parent))",
-					  NULL, 0, &err_msg);
-	if (rc) {
-		auto rp = std::make_pair(false, "SQLite parents table creation failed: " + static_cast<std::string>(err_msg));
-		sqlite3_free(err_msg);
-		return rp;
-	}
-
-	rc = sqlite3_exec(db,
-					  "CREATE TABLE IF NOT EXISTS paths ("
-					  "lot_name NOT NULL,"
-					  "path UNIQUE NOT NULL,"
-					  "recursive NOT NULL)",
-					  NULL, 0, &err_msg);
-	if (rc) {
-		auto rp = std::make_pair(false, "SQLite paths table creation failed: " + static_cast<std::string>(err_msg));
-		sqlite3_free(err_msg);
-		return rp;
-	}
-
-	rc = sqlite3_exec(db,
-					  "CREATE TABLE IF NOT EXISTS management_policy_attributes ("
-					  "lot_name PRIMARY KEY NOT NULL,"
-					  "dedicated_GB,"
-					  "opportunistic_GB,"
-					  "max_num_objects,"
-					  "creation_time,"
-					  "expiration_time,"
-					  "deletion_time)",
-					  NULL, 0, &err_msg);
-	if (rc) {
-		auto rp = std::make_pair(false, "SQLite management_policy_attributes table creation failed: " +
-											static_cast<std::string>(err_msg));
-		sqlite3_free(err_msg);
-		return rp;
-	}
-
-	rc = sqlite3_exec(db,
-					  "CREATE TABLE IF NOT EXISTS lot_usage ("
-					  "lot_name PRIMARY KEY NOT NULL,"
-					  "self_GB NOT NULL,"
-					  "children_GB NOT NULL,"
-					  "self_objects NOT NULL,"
-					  "children_objects NOT NULL,"
-					  "self_GB_being_written NOT NULL,"
-					  "children_GB_being_written NOT NULL,"
-					  "self_objects_being_written NOT NULL,"
-					  "children_objects_being_written NOT NULL)",
-					  NULL, 0, &err_msg);
-	if (rc) {
-		auto rp = std::make_pair(false, "SQLite lot_usage table creation failed: " + static_cast<std::string>(err_msg));
-		sqlite3_free(err_msg);
-		return rp;
-	}
-
-	sqlite3_close(db);
-	return std::make_pair(true, "");
-}
-
-std::pair<bool, std::string> get_lot_file() {
-	const char *lot_env_dir = getenv("LOT_HOME"); // Env variable where Lot info is stored
+std::pair<bool, std::string> StorageManager::get_db_path() {
+	const char *lot_env_dir = getenv("LOT_HOME");
 
 	auto bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
 	bufsize = (bufsize == -1) ? 16384 : bufsize;
@@ -133,7 +53,7 @@ std::pair<bool, std::string> get_lot_file() {
 
 	std::string lot_home_dir;
 	std::string configured_lot_home_dir = lotman::Context::get_lot_home();
-	if (configured_lot_home_dir.length() > 0) { // The variable has been configured
+	if (configured_lot_home_dir.length() > 0) {
 		lot_home_dir = configured_lot_home_dir;
 	} else {
 		lot_home_dir = lot_env_dir ? lot_env_dir : home_dir.c_str();
@@ -155,928 +75,803 @@ std::pair<bool, std::string> get_lot_file() {
 		return std::make_pair(false, "Unable to create directory " + lot_db_dir + ": errno: " + std::to_string(errno));
 	}
 
-	std::string lot_file = lot_db_dir + "/lotman_cpp.sqlite";
-	auto rp = initialize_lotdb(lot_file);
-	if (!rp.first) {
-		return std::make_pair(false, "Unable to initialize lotdb: " + rp.second);
-	}
-
-	return std::make_pair(true, lot_file);
-}
-} // namespace
-
-std::pair<bool, std::string> lotman::Lot::write_new() {
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
-	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
-	}
-
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
-
-	sqlite3_stmt *owner_stmt;
-	rc = sqlite3_prepare_v2(db, "INSERT INTO owners VALUES (?, ?)", -1, &owner_stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_prepare_v2 failed: sqlite errno: " + std::to_string(rc));
-	}
-
-	// Bind inputs to sql statement
-	rc = sqlite3_bind_text(owner_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(owner_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_bind_text for lot_name failed: sqlite errno: " + std::to_string(rc));
-	}
-
-	rc = sqlite3_bind_text(owner_stmt, 2, owner.c_str(), owner.size(), SQLITE_TRANSIENT);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(owner_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_text for owner failed: sqlite errno: " + std::to_string(rc));
-	}
-	rc = sqlite3_step(owner_stmt);
-	if (rc != SQLITE_DONE) {
-		sqlite3_finalize(owner_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_step for owner table failed: sqlite errno: " + std::to_string(rc));
-	}
-	sqlite3_exec(db, "COMMIT", 0, 0, 0);
-	sqlite3_finalize(owner_stmt);
-
-	for (const auto &parent : parents) {
-		sqlite3_stmt *parent_stmt;
-		rc = sqlite3_prepare_v2(db, "INSERT INTO parents VALUES (?, ?)", -1, &parent_stmt, NULL);
-		if (rc != SQLITE_OK) {
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite3_prepare_v2 for parent_stmt failed: sqlite errno: " +
-											 std::to_string(rc));
-		}
-
-		// Bind inputs to sql statement
-		rc = sqlite3_bind_text(parent_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
-		if (rc != SQLITE_OK) {
-			sqlite3_finalize(parent_stmt);
-			sqlite3_close(db);
-			return std::make_pair(false,
-								  "Call to sqlite3_bind_text for lot_name failed: sqlite errno: " + std::to_string(rc));
-		}
-		rc = sqlite3_bind_text(parent_stmt, 2, parent.c_str(), parent.size(), SQLITE_TRANSIENT);
-		if (rc != SQLITE_OK) {
-			sqlite3_finalize(parent_stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite3_bind_text for parent \"" + parent +
-											 "\" failed: sqlite errno: " + std::to_string(rc));
-		}
-		rc = sqlite3_step(parent_stmt);
-		if (rc != SQLITE_DONE) {
-			int err = sqlite3_extended_errcode(db);
-			sqlite3_finalize(parent_stmt);
-			sqlite3_close(db);
-			return std::make_pair(false,
-								  "Call to sqlite3_step for parent_stmt failed: sqlite errno: " + std::to_string(rc));
-		}
-		sqlite3_exec(db, "COMMIT", 0, 0, 0);
-		sqlite3_finalize(parent_stmt);
-	}
-
-	// Paths
-	for (const auto &path : paths) {
-		sqlite3_stmt *path_stmt;
-		rc = sqlite3_prepare_v2(db, "INSERT INTO paths VALUES (?, ?, ?)", -1, &path_stmt, NULL);
-		if (rc != SQLITE_OK) {
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite_prepare_v2 failed for path_stmt: sqlite errno: " +
-											 std::to_string(rc));
-		}
-
-		// Bind inputs to sql statement
-		rc = sqlite3_bind_text(path_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
-		if (rc != SQLITE_OK) {
-			sqlite3_finalize(path_stmt);
-			sqlite3_close(db);
-			return std::make_pair(false,
-								  "Call to sqlite_bind_text for lot_name failed: sqlite errno: " + std::to_string(rc));
-		}
-		rc = sqlite3_bind_text(path_stmt, 2, path["path"].get<std::string>().c_str(),
-							   path["path"].get<std::string>().size(), SQLITE_TRANSIENT);
-		if (rc != SQLITE_OK) {
-			sqlite3_finalize(path_stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite_bind_text for path \"" + path.get<std::string>() +
-											 "\" failed: sqlite errno: " + std::to_string(rc));
-		}
-		rc = sqlite3_bind_int(path_stmt, 3, static_cast<int>(path["recursive"].get<bool>()));
-		if (rc != SQLITE_OK) {
-			sqlite3_finalize(path_stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite_bind_int for recursive val for path \"" +
-											 path.get<std::string>() +
-											 "\" failed: sqlite errno: " + std::to_string(rc));
-		}
-
-		rc = sqlite3_step(path_stmt);
-		if (rc != SQLITE_DONE) {
-			sqlite3_finalize(path_stmt);
-			sqlite3_close(db);
-			return std::make_pair(false,
-								  "Call to sqlite_step for path table failed: sqlite errno: " + std::to_string(rc));
-		}
-		sqlite3_exec(db, "COMMIT", 0, 0, 0);
-		sqlite3_finalize(path_stmt);
-	}
-
-	// Set up management policy attributes
-	sqlite3_stmt *man_pol_attr_stmt;
-	rc = sqlite3_prepare_v2(db, "INSERT INTO management_policy_attributes VALUES (?, ?, ?, ?, ?, ?, ?)", -1,
-							&man_pol_attr_stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite_prepare_v2 failed for man_pol_attr_stmt: sqlite errno: " +
-										 std::to_string(rc));
-	}
-
-	// Bind inputs to sql statement
-	rc = sqlite3_bind_text(man_pol_attr_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(man_pol_attr_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_bind_text for lot_name failed: sqlite errno: " + std::to_string(rc));
-	}
-	rc = sqlite3_bind_double(man_pol_attr_stmt, 2, man_policy_attr.dedicated_GB);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(man_pol_attr_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_double for dedicated_GB failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_double(man_pol_attr_stmt, 3, man_policy_attr.opportunistic_GB);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(man_pol_attr_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_double for opportunistic_GB failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_int64(man_pol_attr_stmt, 4, man_policy_attr.max_num_objects);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(man_pol_attr_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_int64 for max_num_objects failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_int64(man_pol_attr_stmt, 5, man_policy_attr.creation_time);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(man_pol_attr_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_int64 for creation_time failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_int64(man_pol_attr_stmt, 6, man_policy_attr.expiration_time);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(man_pol_attr_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_int64 for expiration_time failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_int64(man_pol_attr_stmt, 7, man_policy_attr.deletion_time);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(man_pol_attr_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_int64 for deletion_time failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-
-	rc = sqlite3_step(man_pol_attr_stmt);
-	if (rc != SQLITE_DONE) {
-		int err = sqlite3_extended_errcode(db);
-		sqlite3_finalize(man_pol_attr_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_step for man_pol_attr_stmt failed: sqlite errno: " + std::to_string(rc));
-	}
-
-	sqlite3_exec(db, "COMMIT", 0, 0, 0);
-	sqlite3_finalize(man_pol_attr_stmt);
-
-	// Initialize all lot usage parameters to 0
-	sqlite3_stmt *init_stmt;
-	rc = sqlite3_prepare_v2(db, "INSERT INTO lot_usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", -1, &init_stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_prepare_v2 for init_stmt failed: sqlite errno: " + std::to_string(rc));
-	}
-
-	// Bind inputs to sql statement
-	rc = sqlite3_bind_text(init_stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_bind_text for lot_name failed: sqlite errno: " + std::to_string(rc));
-	}
-	rc = sqlite3_bind_double(init_stmt, 2, usage.self_GB);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_bind_double for self_GB failed: sqlite errno: " + std::to_string(rc));
-	}
-	rc = sqlite3_bind_double(init_stmt, 3, usage.children_GB);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_double for children_GB failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_int64(init_stmt, 4, usage.self_objects);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_int64 for self_objects failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_int64(init_stmt, 5, usage.children_objects);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_int64 for children_objects failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_double(init_stmt, 6, usage.self_GB_being_written);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_double for self_GB_being_written failed: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_double(init_stmt, 7, usage.children_GB_being_written);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_bind_double for children_GB_being_written failed: sqlite errno: " +
-								  std::to_string(rc));
-	}
-	rc = sqlite3_bind_int64(init_stmt, 8, usage.self_objects_being_written);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_bind_int64 for self_objects_being_written failed: sqlite errno: " +
-								  std::to_string(rc));
-	}
-	rc = sqlite3_bind_int64(init_stmt, 9, usage.children_objects_being_written);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false,
-							  "Call to sqlite3_bind_int64 for children_objects_being_written failed: sqlite errno: " +
-								  std::to_string(rc));
-	}
-
-	rc = sqlite3_step(init_stmt);
-	if (rc != SQLITE_DONE) {
-		// int err = sqlite3_extended_errcode(db);
-		sqlite3_finalize(init_stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_step for init_stmt failed: sqlite errno: " + std::to_string(rc));
-	}
-
-	sqlite3_exec(db, "COMMIT", 0, 0, 0);
-	sqlite3_finalize(init_stmt);
-	sqlite3_close(db);
-
-	return std::make_pair(true, "");
+	return std::make_pair(true, lot_db_dir + "/lotman_cpp.sqlite");
 }
 
-std::pair<bool, std::string> lotman::Lot::delete_lot_from_db() {
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
-	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
+Storage &StorageManager::get_storage() {
+	if (!m_initialized) {
+		auto db_path_result = get_db_path();
+		if (!db_path_result.first) {
+			throw std::runtime_error("Failed to get database path: " + db_path_result.second);
+		}
+
+		m_storage = std::make_unique<Storage>(create_storage(db_path_result.second));
+
+		// Enable WAL mode for better concurrency
+		if (!m_wal_enabled) {
+			m_storage->pragma.journal_mode(journal_mode::WAL);
+			m_wal_enabled = true;
+		}
+
+		// Set busy timeout
+		m_storage->busy_timeout(*lotman_db_timeout);
+
+		// Create tables if they don't exist
+		m_storage->sync_schema();
+
+		m_initialized = true;
 	}
 
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
-
-	// Delete from owners table
-	sqlite3_stmt *stmt;
-	rc = sqlite3_prepare_v2(db, "DELETE FROM owners WHERE lot_name = ?;", -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from "
-									 "owners table: sqlite3 errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT);
-	if (rc != SQLITE_OK) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from "
-									 "owners table: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_step(stmt);
-	if (rc != SQLITE_DONE) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Failed to delete lot from owners table: sqlite3 errno: " + std::to_string(rc));
-	}
-	sqlite3_finalize(stmt);
-	sqlite3_exec(db, "COMMIT", 0, 0, 0);
-
-	// Delete from parents table
-	rc = sqlite3_prepare_v2(db, "DELETE FROM parents WHERE lot_name = ?;", -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from "
-									 "parents table: sqlite3 errno: " +
-										 std::to_string(rc));
-	}
-	if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from "
-									 "parents table: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_step(stmt);
-	if (rc != SQLITE_DONE) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Failed to delete lot from parents table: sqlite3 errno: " + std::to_string(rc));
-	}
-	sqlite3_finalize(stmt);
-	sqlite3_exec(db, "COMMIT", 0, 0, 0);
-
-	// Delete from paths
-	rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE lot_name = ?;", -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from "
-									 "paths table: sqlite3 errno: " +
-										 std::to_string(rc));
-	}
-	if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from "
-									 "paths table: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_step(stmt);
-	if (rc != SQLITE_DONE) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Failed to delete lot from paths table: sqlite3 errno: " + std::to_string(rc));
-	}
-	sqlite3_finalize(stmt);
-	sqlite3_exec(db, "COMMIT", 0, 0, 0);
-
-	// Delete from management_policy_attributes
-	rc = sqlite3_prepare_v2(db, "DELETE FROM management_policy_attributes WHERE lot_name = ?;", -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from "
-									 "management_policy_attributes table: sqlite3 errno: " +
-										 std::to_string(rc));
-	}
-	if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from "
-									 "management_policy_attributes table: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_step(stmt);
-	if (rc != SQLITE_DONE) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Failed to delete lot from management_policy_attributes table: sqlite3 errno: " +
-										 std::to_string(rc));
-	}
-	sqlite3_finalize(stmt);
-	sqlite3_exec(db, "COMMIT", 0, 0, 0);
-
-	// Delete from lot_usage
-	rc = sqlite3_prepare_v2(db, "DELETE FROM lot_usage WHERE lot_name = ?;", -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete lot from "
-									 "usage table: sqlite3 errno: " +
-										 std::to_string(rc));
-	}
-	if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete lot from "
-									 "usage table: sqlite errno: " +
-										 std::to_string(rc));
-	}
-	rc = sqlite3_step(stmt);
-	if (rc != SQLITE_DONE) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Failed to delete lot from usage table: sqlite3 errno: " + std::to_string(rc));
-	}
-
-	sqlite3_finalize(stmt);
-	sqlite3_exec(db, "COMMIT", 0, 0, 0);
-	sqlite3_close(db);
-
-	return std::make_pair(true, "");
+	return *m_storage;
 }
 
-std::pair<bool, std::string> lotman::Lot::store_updates(std::string update_stmt,
-														std::map<std::string, std::vector<int>> update_str_map,
-														std::map<int64_t, std::vector<int>> update_int_map,
-														std::map<double, std::vector<int>> update_dbl_map) {
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
-	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
+void StorageManager::reset() {
+	// First clear the connection pool and statement cache since they hold
+	// connections/statements for the old database
+	PreparedStatementCache::clear_all();
+	ConnectionPool::clear();
+
+	m_storage.reset();
+	m_initialized = false;
+	m_wal_enabled = false;
+}
+
+// ConnectionPool implementation
+
+sqlite3 *ConnectionPool::acquire() {
+	std::lock_guard<std::mutex> lock(m_mutex);
+
+	if (!m_pool.empty()) {
+		sqlite3 *conn = m_pool.back();
+		m_pool.pop_back();
+		return conn;
 	}
 
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
+	// No available connections, create a new one
+	auto db_path = StorageManager::get_db_path();
+	if (!db_path.first) {
+		return nullptr;
+	}
 
-	sqlite3_stmt *stmt;
-	rc = sqlite3_prepare_v2(db, update_stmt.c_str(), -1, &stmt, NULL);
+	// Ensure storage is initialized (creates tables if needed)
+	StorageManager::get_storage();
+
+	sqlite3 *conn = nullptr;
+	int rc = sqlite3_open(db_path.second.c_str(), &conn);
 	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(
-			false, "Call to sqlite3_prepare_v2 failed when preparing statement to write updates: sqlite3 errno: " +
-					   std::to_string(rc));
+		if (conn) {
+			sqlite3_close(conn);
+		}
+		return nullptr;
 	}
 
-	// No need to check if maps are empty -- won't enter loop if they are
-	for (const auto &key : update_str_map) {
-		for (const auto &value : key.second) { // Handles case when a single key needs to be mapped to multiple places
-											   // in the statement (hence, the map is to a vector of ints)
-			if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(false, "Call to sqlite3_bind_text for update_str_map failed when preparing to "
-											 "write updates: sqlite errno: " +
-												 std::to_string(rc));
+	// Enable WAL mode for better concurrency across processes
+	sqlite3_exec(conn, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+	sqlite3_busy_timeout(conn, *lotman_db_timeout);
+	return conn;
+}
+
+void ConnectionPool::release(sqlite3 *conn) {
+	if (!conn)
+		return;
+
+	bool should_close = false;
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+
+		if (m_pool.size() >= m_max_size) {
+			should_close = true;
+		} else {
+			m_pool.push_back(conn);
+		}
+	}
+
+	if (should_close) {
+		// Clear cached statements outside of ConnectionPool mutex to avoid deadlock
+		PreparedStatementCache::clear_for_connection(conn);
+		sqlite3_close(conn);
+	}
+}
+
+void ConnectionPool::clear() {
+	std::lock_guard<std::mutex> lock(m_mutex);
+
+	for (auto *conn : m_pool) {
+		PreparedStatementCache::clear_for_connection(conn);
+		sqlite3_close(conn);
+	}
+	m_pool.clear();
+}
+
+void ConnectionPool::set_max_size(size_t size) {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	m_max_size = size;
+
+	// Trim pool if it exceeds new max size
+	while (m_pool.size() > m_max_size) {
+		sqlite3 *conn = m_pool.back();
+		m_pool.pop_back();
+		PreparedStatementCache::clear_for_connection(conn);
+		sqlite3_close(conn);
+	}
+}
+
+// PreparedStatementCache implementation
+
+std::pair<sqlite3_stmt *, std::string> PreparedStatementCache::get_or_prepare(sqlite3 *db, const std::string &query) {
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+
+		auto conn_it = m_cache.find(db);
+		if (conn_it != m_cache.end()) {
+			auto stmt_it = conn_it->second.find(query);
+			if (stmt_it != conn_it->second.end()) {
+				// Found cached statement, remove from cache (will be returned later)
+				sqlite3_stmt *stmt = stmt_it->second;
+				conn_it->second.erase(stmt_it);
+				return std::make_pair(stmt, "");
 			}
 		}
 	}
 
-	for (const auto &key : update_int_map) {
-		for (const auto &value : key.second) {
-			if (sqlite3_bind_int64(stmt, value, key.first) != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(false, "Call to sqlite3_bind_int for update_int_map failed when preparing to "
-											 "write updates: sqlite errno: " +
-												 std::to_string(rc));
+	// Not in cache, prepare a new statement
+	sqlite3_stmt *stmt = nullptr;
+	int rc = sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, nullptr);
+	if (rc != SQLITE_OK) {
+		return std::make_pair(nullptr, "Call to sqlite3_prepare_v2 failed: sqlite errno: " + std::to_string(rc) +
+										   " - " + std::string(sqlite3_errmsg(db)));
+	}
+
+	return std::make_pair(stmt, "");
+}
+
+void PreparedStatementCache::return_statement(sqlite3 *db, const std::string &query, sqlite3_stmt *stmt) {
+	if (!stmt)
+		return;
+
+	std::lock_guard<std::mutex> lock(m_mutex);
+
+	// Check if there's already a statement cached for this query
+	auto &conn_cache = m_cache[db];
+	if (conn_cache.find(query) != conn_cache.end()) {
+		// Already have one cached, just finalize this one
+		sqlite3_finalize(stmt);
+	} else {
+		conn_cache[query] = stmt;
+	}
+}
+
+void PreparedStatementCache::clear_for_connection(sqlite3 *db) {
+	std::lock_guard<std::mutex> lock(m_mutex);
+
+	auto it = m_cache.find(db);
+	if (it != m_cache.end()) {
+		for (auto &[query, stmt] : it->second) {
+			sqlite3_finalize(stmt);
+		}
+		m_cache.erase(it);
+	}
+}
+
+void PreparedStatementCache::clear_all() {
+	std::lock_guard<std::mutex> lock(m_mutex);
+
+	for (auto &[db, conn_cache] : m_cache) {
+		for (auto &[query, stmt] : conn_cache) {
+			sqlite3_finalize(stmt);
+		}
+	}
+	m_cache.clear();
+}
+
+// PooledConnection implementation
+
+PooledConnection::PooledConnection(TransactionType txn_type) {
+	m_db = ConnectionPool::acquire();
+	if (!m_db) {
+		m_error = "Failed to acquire connection from pool";
+		return;
+	}
+
+	// Begin transaction if requested
+	if (txn_type != TransactionType::None) {
+		const char *txn_cmd = nullptr;
+		switch (txn_type) {
+			case TransactionType::Deferred:
+				txn_cmd = "BEGIN DEFERRED";
+				break;
+			case TransactionType::Immediate:
+				txn_cmd = "BEGIN IMMEDIATE";
+				break;
+			case TransactionType::Exclusive:
+				txn_cmd = "BEGIN EXCLUSIVE";
+				break;
+			default:
+				break;
+		}
+
+		if (txn_cmd) {
+			int rc = sqlite3_exec(m_db, txn_cmd, nullptr, nullptr, nullptr);
+			if (rc != SQLITE_OK) {
+				m_error = "Failed to begin transaction: sqlite errno: " + std::to_string(rc);
+				ConnectionPool::release(m_db);
+				m_db = nullptr;
+				return;
 			}
+			m_in_transaction = true;
 		}
 	}
+}
 
-	for (const auto &key : update_dbl_map) {
-		for (const auto &value : key.second) {
-			if (sqlite3_bind_double(stmt, value, key.first) != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(false, "Call to sqlite3_bind_double for update_int_map failed when preparing to "
-											 "write updates: sqlite errno: " +
-												 std::to_string(rc));
+PooledConnection::PooledConnection(PooledConnection &&other) noexcept
+	: m_db(other.m_db),
+	  m_in_transaction(other.m_in_transaction),
+	  m_committed(other.m_committed),
+	  m_error(std::move(other.m_error)) {
+	other.m_db = nullptr;
+	other.m_in_transaction = false;
+}
+
+PooledConnection &PooledConnection::operator=(PooledConnection &&other) noexcept {
+	if (this != &other) {
+		// Clean up current state
+		if (m_db) {
+			if (m_in_transaction && !m_committed) {
+				sqlite3_exec(m_db, "ROLLBACK", nullptr, nullptr, nullptr);
 			}
+			ConnectionPool::release(m_db);
 		}
+
+		m_db = other.m_db;
+		m_in_transaction = other.m_in_transaction;
+		m_committed = other.m_committed;
+		m_error = std::move(other.m_error);
+
+		other.m_db = nullptr;
+		other.m_in_transaction = false;
 	}
-
-	// char *prepared_query = sqlite3_expanded_sql(stmt); // Useful to print for debugging
-	rc = sqlite3_step(stmt);
-	if (rc != SQLITE_DONE) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return std::make_pair(false, "Failed to write updates: sqlite3 errno: " + std::to_string(rc));
-	}
-
-	sqlite3_finalize(stmt);
-	sqlite3_close(db);
-
-	return std::make_pair(true, "");
+	return *this;
 }
 
-std::pair<bool, std::string> lotman::Lot::store_new_paths(std::vector<json> new_paths) {
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
+PooledConnection::~PooledConnection() {
+	if (m_db) {
+		if (m_in_transaction && !m_committed) {
+			sqlite3_exec(m_db, "ROLLBACK", nullptr, nullptr, nullptr);
+		}
+		ConnectionPool::release(m_db);
 	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
-	}
-
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
-
-	for (const auto &path : new_paths) {
-		sqlite3_stmt *stmt;
-		rc = sqlite3_prepare_v2(db, "INSERT INTO paths VALUES (?, ?, ?)", -1, &stmt, NULL);
-		if (rc != SQLITE_OK) {
-			sqlite3_close(db);
-			return std::make_pair(
-				false,
-				"Call to sqlite3_prepare_v2 failed when preparing statement to write new paths: sqlite3 errno: " +
-					std::to_string(rc));
-		}
-
-		// Bind inputs to sql statement
-		if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(
-				false,
-				"Call to sqlite3_bind_text for lot_name failed when preparing to write new path: sqlite errno: " +
-					std::to_string(rc));
-		}
-		if (sqlite3_bind_text(stmt, 2, path["path"].get<std::string>().c_str(), path["path"].get<std::string>().size(),
-							  SQLITE_TRANSIENT) != SQLITE_OK) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(
-				false, "Call to sqlite3_bind_text for path failed when preparing to write new path: sqlite errno: " +
-						   std::to_string(rc));
-		}
-		if (sqlite3_bind_int(stmt, 3, path["recursive"].get<bool>()) != SQLITE_OK) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(
-				false, "Call to sqlite3_bind_int for path failed when preparing to write new path: sqlite errno: " +
-						   std::to_string(rc));
-		}
-		rc = sqlite3_step(stmt);
-		if (rc != SQLITE_DONE) {
-			int err = sqlite3_extended_errcode(db);
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Failed to write new paths: sqlite3 errno: " + std::to_string(rc));
-		}
-		sqlite3_exec(db, "COMMIT", 0, 0, 0);
-		sqlite3_finalize(stmt);
-	}
-
-	sqlite3_close(db);
-
-	return std::make_pair(true, "");
-}
-std::pair<bool, std::string> lotman::Lot::store_new_parents(std::vector<Lot> new_parents) {
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
-	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
-	}
-
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
-
-	for (const auto &parent : new_parents) {
-		sqlite3_stmt *stmt;
-		rc = sqlite3_prepare_v2(db, "INSERT INTO parents VALUES (?, ?)", -1, &stmt, NULL);
-		if (rc != SQLITE_OK) {
-			sqlite3_close(db);
-			return std::make_pair(
-				false,
-				"Call to sqlite3_prepare_v2 failed when preparing statement to write new parents: sqlite3 errno: " +
-					std::to_string(rc));
-		}
-
-		// Bind inputs to sql statement
-		if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(
-				false,
-				"Call to sqlite3_bind_text for lot_name failed when preparing to write new parents: sqlite errno: " +
-					std::to_string(rc));
-		}
-		if (sqlite3_bind_text(stmt, 2, parent.lot_name.c_str(), parent.lot_name.size(), SQLITE_TRANSIENT) !=
-			SQLITE_OK) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite3_bind_text for parent.lot_name failed when preparing to write "
-										 "new parent: sqlite errno: " +
-											 std::to_string(rc));
-		}
-		rc = sqlite3_step(stmt);
-		if (rc != SQLITE_DONE) {
-			int err = sqlite3_extended_errcode(db);
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Failed to write new parent: sqlite3 errno: " + std::to_string(rc));
-		}
-		sqlite3_exec(db, "COMMIT", 0, 0, 0);
-		sqlite3_finalize(stmt);
-	}
-
-	sqlite3_close(db);
-
-	return std::make_pair(true, "");
 }
 
-std::pair<bool, std::string> lotman::Lot::remove_parents_from_db(std::vector<std::string> parents) {
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
-	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
+bool PooledConnection::commit() {
+	if (!m_db || !m_in_transaction || m_committed) {
+		return false;
 	}
 
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
-
-	// Delete from parents table
-	for (const auto &parent : parents) {
-		sqlite3_stmt *stmt;
-		rc = sqlite3_prepare_v2(db, "DELETE FROM parents WHERE lot_name = ? AND parent = ?;", -1, &stmt, NULL);
-		if (rc != SQLITE_OK) {
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete parents "
-										 "from the lot: sqlite3 errno: " +
-											 std::to_string(rc));
-		}
-
-		// Bind the lot
-		if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete a "
-										 "parent from parents table: sqlite errno: " +
-											 std::to_string(rc));
-		}
-
-		// Bind the parent
-		if (sqlite3_bind_text(stmt, 2, parent.c_str(), parent.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite3_bind_text for parent.lot_name failed when preparing to "
-										 "delete a parent from parents table: sqlite errno: " +
-											 std::to_string(rc));
-		}
-		rc = sqlite3_step(stmt);
-		if (rc != SQLITE_DONE) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(false,
-								  "Failed to delete parent from parents table: sqlite3 errno: " + std::to_string(rc));
-		}
-		sqlite3_exec(db, "COMMIT", 0, 0, 0);
-		sqlite3_finalize(stmt);
+	int rc = sqlite3_exec(m_db, "COMMIT", nullptr, nullptr, nullptr);
+	if (rc != SQLITE_OK) {
+		m_error = "Failed to commit: sqlite errno: " + std::to_string(rc);
+		return false;
 	}
 
-	sqlite3_close(db);
-	return std::make_pair(true, "");
+	m_committed = true;
+	return true;
 }
 
-std::pair<bool, std::string> lotman::Lot::remove_paths_from_db(std::vector<std::string> paths) {
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(false, "Could not get lot_file: " + lot_fname.second);
+void PooledConnection::rollback() {
+	if (m_db && m_in_transaction && !m_committed) {
+		sqlite3_exec(m_db, "ROLLBACK", nullptr, nullptr, nullptr);
+		m_committed = true; // Prevent double-rollback in destructor
 	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(false, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
-	}
-
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
-
-	// Delete from paths table
-	for (const auto &path : paths) {
-		sqlite3_stmt *stmt;
-		// rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE lot_name = ? AND path = ?;", -1, &stmt, NULL);
-		rc = sqlite3_prepare_v2(db, "DELETE FROM paths WHERE path = ?;", -1, &stmt,
-								NULL); // Because paths should be unique, we don't need to specify which lot
-		if (rc != SQLITE_OK) {
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite3_prepare_v2 failed when preparing statement to delete paths "
-										 "from the lot: sqlite3 errno: " +
-											 std::to_string(rc));
-		}
-
-		// // Bind the lot
-		// if (sqlite3_bind_text(stmt, 1, lot_name.c_str(), lot_name.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-		//     sqlite3_finalize(stmt);
-		//     sqlite3_close(db);
-		//     return std::make_pair(false, "Call to sqlite3_bind_text for lot_name failed when preparing to delete a
-		//     path from paths table: sqlite errno: " + std::to_string(rc));
-		// }
-
-		// Bind the path
-		if (sqlite3_bind_text(stmt, 1, path.c_str(), path.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Call to sqlite3_bind_text for path failed when preparing to delete a path "
-										 "from paths table: sqlite errno: " +
-											 std::to_string(rc));
-		}
-		rc = sqlite3_step(stmt);
-		if (rc != SQLITE_DONE) {
-			sqlite3_finalize(stmt);
-			sqlite3_close(db);
-			return std::make_pair(false, "Failed to delete path from path table: sqlite3 errno: " + std::to_string(rc));
-		}
-		sqlite3_exec(db, "COMMIT", 0, 0, 0);
-		sqlite3_finalize(stmt);
-	}
-
-	sqlite3_close(db);
-	return std::make_pair(true, "");
 }
 
-std::pair<std::vector<std::string>, std::string>
-lotman::Checks::SQL_get_matches(std::string dynamic_query, std::map<std::string, std::vector<int>> str_map,
-								std::map<int64_t, std::vector<int>> int_map,
-								std::map<double, std::vector<int>> double_map) {
+// ScopedConnection implementation
+
+ScopedConnection::ScopedConnection(TransactionType txn_type) {
+	auto db_path = StorageManager::get_db_path();
+	if (!db_path.first) {
+		m_error = "Could not get lot_file: " + db_path.second;
+		return;
+	}
+
+	// Ensure storage is initialized (creates tables if needed)
+	StorageManager::get_storage();
+
+	int rc = sqlite3_open(db_path.second.c_str(), &m_db);
+	if (rc != SQLITE_OK) {
+		m_error = "Unable to open lotdb: sqlite errno: " + std::to_string(rc);
+		if (m_db) {
+			sqlite3_close(m_db);
+			m_db = nullptr;
+		}
+		return;
+	}
+
+	// Enable WAL mode for better concurrency across processes
+	sqlite3_exec(m_db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+	sqlite3_busy_timeout(m_db, *lotman_db_timeout);
+
+	// Begin transaction if requested
+	if (txn_type != TransactionType::None) {
+		const char *txn_cmd = nullptr;
+		switch (txn_type) {
+			case TransactionType::Deferred:
+				txn_cmd = "BEGIN DEFERRED";
+				break;
+			case TransactionType::Immediate:
+				txn_cmd = "BEGIN IMMEDIATE";
+				break;
+			case TransactionType::Exclusive:
+				txn_cmd = "BEGIN EXCLUSIVE";
+				break;
+			default:
+				break;
+		}
+
+		if (txn_cmd) {
+			rc = sqlite3_exec(m_db, txn_cmd, nullptr, nullptr, nullptr);
+			if (rc != SQLITE_OK) {
+				m_error = "Failed to begin transaction: sqlite errno: " + std::to_string(rc);
+				sqlite3_close(m_db);
+				m_db = nullptr;
+				return;
+			}
+			m_in_transaction = true;
+		}
+	}
+}
+
+ScopedConnection::ScopedConnection(ScopedConnection &&other) noexcept
+	: m_db(other.m_db),
+	  m_in_transaction(other.m_in_transaction),
+	  m_committed(other.m_committed),
+	  m_error(std::move(other.m_error)) {
+	other.m_db = nullptr;
+	other.m_in_transaction = false;
+}
+
+ScopedConnection &ScopedConnection::operator=(ScopedConnection &&other) noexcept {
+	if (this != &other) {
+		// Clean up current state
+		if (m_db) {
+			if (m_in_transaction && !m_committed) {
+				sqlite3_exec(m_db, "ROLLBACK", nullptr, nullptr, nullptr);
+			}
+			sqlite3_close(m_db);
+		}
+
+		m_db = other.m_db;
+		m_in_transaction = other.m_in_transaction;
+		m_committed = other.m_committed;
+		m_error = std::move(other.m_error);
+
+		other.m_db = nullptr;
+		other.m_in_transaction = false;
+	}
+	return *this;
+}
+
+ScopedConnection::~ScopedConnection() {
+	if (m_db) {
+		if (m_in_transaction && !m_committed) {
+			sqlite3_exec(m_db, "ROLLBACK", nullptr, nullptr, nullptr);
+		}
+		sqlite3_close(m_db);
+	}
+}
+
+bool ScopedConnection::commit() {
+	if (!m_db || !m_in_transaction || m_committed) {
+		return false;
+	}
+
+	int rc = sqlite3_exec(m_db, "COMMIT", nullptr, nullptr, nullptr);
+	if (rc != SQLITE_OK) {
+		m_error = "Failed to commit: sqlite errno: " + std::to_string(rc);
+		return false;
+	}
+
+	m_committed = true;
+	return true;
+}
+
+void ScopedConnection::rollback() {
+	if (m_db && m_in_transaction && !m_committed) {
+		sqlite3_exec(m_db, "ROLLBACK", nullptr, nullptr, nullptr);
+		m_committed = true; // Prevent double-rollback in destructor
+	}
+}
+
+// Raw functions for complex SQL queries
+
+std::pair<std::vector<std::string>, std::string> SQL_get_matches(const std::string &dynamic_query,
+																 const std::map<std::string, std::vector<int>> &str_map,
+																 const std::map<int64_t, std::vector<int>> &int_map,
+																 const std::map<double, std::vector<int>> &double_map) {
 	std::vector<std::string> return_vec;
 
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(return_vec, "Could not get lot_file: " + lot_fname.second);
-	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(return_vec, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
-	}
+	try {
+		// Use pooled connection with deferred transaction for read consistency
+		PooledConnection conn(PooledConnection::TransactionType::Deferred);
+		if (!conn.valid()) {
+			return std::make_pair(return_vec, conn.error());
+		}
 
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
+		// Get or prepare the statement (uses cache)
+		auto [stmt, prep_error] = PreparedStatementCache::get_or_prepare(conn.get(), dynamic_query);
+		if (!stmt) {
+			return std::make_pair(return_vec, prep_error);
+		}
 
-	sqlite3_stmt *stmt;
-	rc = sqlite3_prepare_v2(db, dynamic_query.c_str(), -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(return_vec, "Call to sqlite3_prepare_v2 failed: sqlite errno: " + std::to_string(rc));
-	}
+		// RAII guard that returns statement to cache on scope exit
+		CachedStmtGuard stmt_guard(conn.get(), dynamic_query, stmt);
 
-	for (const auto &key : str_map) {
-		for (const auto &value : key.second) {
-			rc = sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT);
-			if (rc != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(return_vec,
-									  "Call to sqlite3_bind_text failed while binding str_map: sqlite3 errno: " +
-										  std::to_string(rc));
+		// Bind parameters
+		int rc;
+		for (const auto &[value, positions] : str_map) {
+			for (int pos : positions) {
+				rc = sqlite3_bind_text(stmt, pos, value.c_str(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
+				if (rc != SQLITE_OK) {
+					stmt_guard.discard(); // Don't cache a statement that failed
+					return std::make_pair(return_vec,
+										  "Call to sqlite3_bind_text failed: sqlite3 errno: " + std::to_string(rc));
+				}
 			}
 		}
-	}
 
-	for (const auto &key : int_map) {
-		for (const auto &value : key.second) {
-			rc = sqlite3_bind_int64(stmt, value, key.first);
-			if (rc != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(return_vec,
-									  "Call to sqlite3_bind_int failed while binding int_map: sqlite3 errno: " +
-										  std::to_string(rc));
+		for (const auto &[value, positions] : int_map) {
+			for (int pos : positions) {
+				rc = sqlite3_bind_int64(stmt, pos, value);
+				if (rc != SQLITE_OK) {
+					stmt_guard.discard();
+					return std::make_pair(return_vec,
+										  "Call to sqlite3_bind_int64 failed: sqlite3 errno: " + std::to_string(rc));
+				}
 			}
 		}
-	}
 
-	for (const auto &key : double_map) {
-		for (const auto &value : key.second) {
-			rc = sqlite3_bind_double(stmt, value, key.first);
-			if (rc != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(return_vec,
-									  "Call to sqlite3_bind_double failed while binding double_map: sqlite3 errno: " +
-										  std::to_string(rc));
+		for (const auto &[value, positions] : double_map) {
+			for (int pos : positions) {
+				rc = sqlite3_bind_double(stmt, pos, value);
+				if (rc != SQLITE_OK) {
+					stmt_guard.discard();
+					return std::make_pair(return_vec,
+										  "Call to sqlite3_bind_double failed: sqlite3 errno: " + std::to_string(rc));
+				}
 			}
 		}
-	}
 
-	rc = sqlite3_step(stmt);
-	while (rc == SQLITE_ROW) {
-		const unsigned char *_data = sqlite3_column_text(stmt, 0);
-		std::string data(reinterpret_cast<const char *>(_data));
-		return_vec.push_back(data);
-		rc = sqlite3_step(stmt);
-	}
-	if (rc == SQLITE_DONE) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
+		// Execute and collect results
+		while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+			const unsigned char *data = sqlite3_column_text(stmt, 0);
+			if (data) {
+				return_vec.push_back(reinterpret_cast<const char *>(data));
+			}
+		}
+
+		if (rc != SQLITE_DONE) {
+			stmt_guard.discard();
+			return std::make_pair(return_vec, "Error stepping through results: sqlite3 errno: " + std::to_string(rc));
+		}
+
+		// Commit the transaction
+		conn.commit();
+
 		return std::make_pair(return_vec, "");
-	} else {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return make_pair(return_vec, "There was an error while stepping through SQLite results: sqlite3 errno: " +
-										 std::to_string(rc));
+	} catch (const std::exception &e) {
+		return std::make_pair(return_vec, std::string("Query failed: ") + e.what());
 	}
 }
 
-std::pair<std::vector<std::vector<std::string>>, std::string> lotman::Checks::SQL_get_matches_multi_col(
-	std::string dynamic_query, int num_returns, std::map<std::string, std::vector<int>> str_map,
-	std::map<int64_t, std::vector<int>> int_map, std::map<double, std::vector<int>> double_map) {
+std::pair<std::vector<std::vector<std::string>>, std::string> SQL_get_matches_multi_col(
+	const std::string &dynamic_query, int num_returns, const std::map<std::string, std::vector<int>> &str_map,
+	const std::map<int64_t, std::vector<int>> &int_map, const std::map<double, std::vector<int>> &double_map) {
 	std::vector<std::vector<std::string>> return_vec;
-	auto lot_fname = get_lot_file();
-	if (!lot_fname.first) {
-		return std::make_pair(return_vec, "Could not get lot_file: " + lot_fname.second);
-	}
-	sqlite3 *db;
-	int rc = sqlite3_open(lot_fname.second.c_str(), &db);
-	if (rc) {
-		sqlite3_close(db);
-		return std::make_pair(return_vec, "Unable to open lotdb: sqlite errno: " + std::to_string(rc));
-	}
 
-	sqlite3_busy_timeout(db, *lotman_db_timeout);
+	try {
+		// Use pooled connection with deferred transaction for read consistency
+		PooledConnection conn(PooledConnection::TransactionType::Deferred);
+		if (!conn.valid()) {
+			return std::make_pair(return_vec, conn.error());
+		}
 
-	sqlite3_stmt *stmt;
-	rc = sqlite3_prepare_v2(db, dynamic_query.c_str(), -1, &stmt, NULL);
-	if (rc != SQLITE_OK) {
-		sqlite3_close(db);
-		return std::make_pair(return_vec, "Call to sqlite3_prepare_v2 failed: sqlite errno: " + std::to_string(rc));
-	}
+		// Get or prepare the statement (uses cache)
+		auto [stmt, prep_error] = PreparedStatementCache::get_or_prepare(conn.get(), dynamic_query);
+		if (!stmt) {
+			return std::make_pair(return_vec, prep_error);
+		}
 
-	for (const auto &key : str_map) {
-		for (const auto &value : key.second) {
-			if (sqlite3_bind_text(stmt, value, key.first.c_str(), key.first.size(), SQLITE_TRANSIENT) != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(return_vec,
-									  "Call to sqlite3_bind_text failed while binding str_map: sqlite3 errno: " +
-										  std::to_string(rc));
+		// RAII guard that returns statement to cache on scope exit
+		CachedStmtGuard stmt_guard(conn.get(), dynamic_query, stmt);
+
+		// Bind parameters
+		int rc;
+		for (const auto &[value, positions] : str_map) {
+			for (int pos : positions) {
+				rc = sqlite3_bind_text(stmt, pos, value.c_str(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
+				if (rc != SQLITE_OK) {
+					stmt_guard.discard();
+					return std::make_pair(return_vec,
+										  "Call to sqlite3_bind_text failed: sqlite3 errno: " + std::to_string(rc));
+				}
 			}
 		}
-	}
 
-	for (const auto &key : int_map) {
-		for (const auto &value : key.second) {
-			if (sqlite3_bind_int64(stmt, value, key.first) != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(return_vec,
-									  "Call to sqlite3_bind_int failed while binding int_map: sqlite3 errno: " +
-										  std::to_string(rc));
+		for (const auto &[value, positions] : int_map) {
+			for (int pos : positions) {
+				rc = sqlite3_bind_int64(stmt, pos, value);
+				if (rc != SQLITE_OK) {
+					stmt_guard.discard();
+					return std::make_pair(return_vec,
+										  "Call to sqlite3_bind_int64 failed: sqlite3 errno: " + std::to_string(rc));
+				}
 			}
 		}
-	}
 
-	for (const auto &key : double_map) {
-		for (const auto &value : key.second) {
-			if (sqlite3_bind_double(stmt, value, key.first) != SQLITE_OK) {
-				sqlite3_finalize(stmt);
-				sqlite3_close(db);
-				return std::make_pair(return_vec,
-									  "Call to sqlite3_bind_double failed while binding double_map: sqlite3 errno: " +
-										  std::to_string(rc));
+		for (const auto &[value, positions] : double_map) {
+			for (int pos : positions) {
+				rc = sqlite3_bind_double(stmt, pos, value);
+				if (rc != SQLITE_OK) {
+					stmt_guard.discard();
+					return std::make_pair(return_vec,
+										  "Call to sqlite3_bind_double failed: sqlite3 errno: " + std::to_string(rc));
+				}
 			}
 		}
-	}
 
-	rc = sqlite3_step(stmt);
-	while (rc == SQLITE_ROW) {
-		std::vector<std::string> internal_data_vec;
-		for (int iter = 0; iter < num_returns; ++iter) {
-			const unsigned char *_data = sqlite3_column_text(stmt, iter);
-			std::string data(reinterpret_cast<const char *>(_data));
-			internal_data_vec.push_back(data);
+		// Execute and collect results
+		while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+			std::vector<std::string> row;
+			row.reserve(num_returns);
+			for (int i = 0; i < num_returns; ++i) {
+				const unsigned char *data = sqlite3_column_text(stmt, i);
+				row.push_back(data ? reinterpret_cast<const char *>(data) : "");
+			}
+			return_vec.push_back(std::move(row));
 		}
-		return_vec.push_back(internal_data_vec);
-		rc = sqlite3_step(stmt);
-	}
-	if (rc == SQLITE_DONE) {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
+
+		if (rc != SQLITE_DONE) {
+			stmt_guard.discard();
+			return std::make_pair(return_vec, "Error stepping through results: sqlite3 errno: " + std::to_string(rc));
+		}
+
+		// Commit the transaction
+		conn.commit();
+
 		return std::make_pair(return_vec, "");
-	} else {
-		sqlite3_finalize(stmt);
-		sqlite3_close(db);
-		return make_pair(return_vec, "There was an error while stepping through SQLite results: sqlite3 errno: " +
-										 std::to_string(rc));
+	} catch (const std::exception &e) {
+		return std::make_pair(return_vec, std::string("Query failed: ") + e.what());
 	}
 }
+
+} // namespace db
+
+// Implementation of Lot and Checks database methods
+
+std::pair<bool, std::string> Lot::write_new() {
+	try {
+		auto &storage = db::StorageManager::get_storage();
+
+		// Use a transaction for atomicity
+		storage.transaction([&] {
+			// Use replace() for tables with text primary keys
+			db::Owner owner_record{lot_name, owner};
+			storage.replace(owner_record);
+
+			// Insert parents
+			for (const auto &parent : parents) {
+				db::Parent parent_record{lot_name, parent};
+				storage.replace(parent_record);
+			}
+
+			// Insert paths
+			for (const auto &path : paths) {
+				db::Path path_record{lot_name, path["path"].get<std::string>(),
+									 static_cast<int>(path["recursive"].get<bool>())};
+				storage.replace(path_record);
+			}
+
+			// Insert management policy attributes
+			db::ManagementPolicyAttributes mpa{lot_name,
+											   man_policy_attr.dedicated_GB,
+											   man_policy_attr.opportunistic_GB,
+											   man_policy_attr.max_num_objects,
+											   man_policy_attr.creation_time,
+											   man_policy_attr.expiration_time,
+											   man_policy_attr.deletion_time};
+			storage.replace(mpa);
+
+			// Insert initial usage (all zeros)
+			db::LotUsage usage_record{lot_name,
+									  usage.self_GB,
+									  usage.children_GB,
+									  usage.self_objects,
+									  usage.children_objects,
+									  usage.self_GB_being_written,
+									  usage.children_GB_being_written,
+									  usage.self_objects_being_written,
+									  usage.children_objects_being_written};
+			storage.replace(usage_record);
+
+			return true; // Commit transaction
+		});
+
+		return std::make_pair(true, "");
+	} catch (const std::exception &e) {
+		return std::make_pair(false, std::string("Failed to write new lot: ") + e.what());
+	}
+}
+
+std::pair<bool, std::string> Lot::delete_lot_from_db() {
+	try {
+		auto &storage = db::StorageManager::get_storage();
+
+		storage.transaction([&] {
+			using namespace sqlite_orm;
+
+			// Delete from all tables where lot_name matches
+			storage.remove_all<db::Owner>(where(c(&db::Owner::lot_name) == lot_name));
+			storage.remove_all<db::Parent>(where(c(&db::Parent::lot_name) == lot_name));
+			storage.remove_all<db::Path>(where(c(&db::Path::lot_name) == lot_name));
+			storage.remove_all<db::ManagementPolicyAttributes>(
+				where(c(&db::ManagementPolicyAttributes::lot_name) == lot_name));
+			storage.remove_all<db::LotUsage>(where(c(&db::LotUsage::lot_name) == lot_name));
+
+			return true; // Commit
+		});
+
+		return std::make_pair(true, "");
+	} catch (const std::exception &e) {
+		return std::make_pair(false, std::string("Failed to delete lot: ") + e.what());
+	}
+}
+
+std::pair<bool, std::string> Lot::store_updates(const std::string &update_stmt,
+												const std::map<std::string, std::vector<int>> &update_str_map,
+												const std::map<int64_t, std::vector<int>> &update_int_map,
+												const std::map<double, std::vector<int>> &update_dbl_map) {
+	// For complex/dynamic updates, we use raw SQL with pooled connection
+	try {
+		// Use immediate transaction for write operations (acquires write lock immediately)
+		db::PooledConnection conn(db::PooledConnection::TransactionType::Immediate);
+		if (!conn.valid()) {
+			return std::make_pair(false, conn.error());
+		}
+
+		// Get or prepare the statement (uses cache)
+		auto [stmt, prep_error] = db::PreparedStatementCache::get_or_prepare(conn.get(), update_stmt);
+		if (!stmt) {
+			return std::make_pair(false, prep_error);
+		}
+
+		// RAII guard that returns statement to cache on scope exit
+		db::CachedStmtGuard stmt_guard(conn.get(), update_stmt, stmt);
+
+		// Bind string parameters
+		for (const auto &[value, positions] : update_str_map) {
+			for (int pos : positions) {
+				if (sqlite3_bind_text(stmt, pos, value.c_str(), static_cast<int>(value.size()), SQLITE_TRANSIENT) !=
+					SQLITE_OK) {
+					stmt_guard.discard();
+					return std::make_pair(false, "Failed to bind string parameter");
+				}
+			}
+		}
+
+		// Bind int parameters
+		for (const auto &[value, positions] : update_int_map) {
+			for (int pos : positions) {
+				if (sqlite3_bind_int64(stmt, pos, value) != SQLITE_OK) {
+					stmt_guard.discard();
+					return std::make_pair(false, "Failed to bind int parameter");
+				}
+			}
+		}
+
+		// Bind double parameters
+		for (const auto &[value, positions] : update_dbl_map) {
+			for (int pos : positions) {
+				if (sqlite3_bind_double(stmt, pos, value) != SQLITE_OK) {
+					stmt_guard.discard();
+					return std::make_pair(false, "Failed to bind double parameter");
+				}
+			}
+		}
+
+		int rc = sqlite3_step(stmt);
+
+		if (rc != SQLITE_DONE) {
+			stmt_guard.discard();
+			return std::make_pair(false, "Failed to execute update: sqlite errno: " + std::to_string(rc));
+		}
+
+		// Commit the transaction
+		if (!conn.commit()) {
+			return std::make_pair(false, conn.error());
+		}
+
+		return std::make_pair(true, "");
+	} catch (const std::exception &e) {
+		return std::make_pair(false, std::string("Failed to store updates: ") + e.what());
+	}
+}
+
+std::pair<bool, std::string> Lot::store_new_paths(const std::vector<nlohmann::json> &new_paths) {
+	try {
+		auto &storage = db::StorageManager::get_storage();
+
+		// Use transaction for batch insert atomicity
+		storage.transaction([&] {
+			for (const auto &path : new_paths) {
+				db::Path path_record{lot_name, path["path"].get<std::string>(),
+									 static_cast<int>(path["recursive"].get<bool>())};
+				storage.replace(path_record);
+			}
+			return true; // Commit
+		});
+
+		return std::make_pair(true, "");
+	} catch (const std::exception &e) {
+		return std::make_pair(false, std::string("Failed to store new paths: ") + e.what());
+	}
+}
+
+std::pair<bool, std::string> Lot::store_new_parents(const std::vector<Lot> &new_parents) {
+	try {
+		auto &storage = db::StorageManager::get_storage();
+
+		// Use transaction for batch insert atomicity
+		storage.transaction([&] {
+			for (const auto &parent : new_parents) {
+				db::Parent parent_record{lot_name, parent.lot_name};
+				storage.replace(parent_record);
+			}
+			return true; // Commit
+		});
+
+		return std::make_pair(true, "");
+	} catch (const std::exception &e) {
+		return std::make_pair(false, std::string("Failed to store new parents: ") + e.what());
+	}
+}
+
+std::pair<bool, std::string> Lot::remove_parents_from_db(const std::vector<std::string> &parents) {
+	try {
+		auto &storage = db::StorageManager::get_storage();
+		using namespace sqlite_orm;
+
+		// Use transaction for batch delete atomicity
+		storage.transaction([&] {
+			for (const auto &parent : parents) {
+				storage.remove_all<db::Parent>(
+					where(c(&db::Parent::lot_name) == lot_name and c(&db::Parent::parent) == parent));
+			}
+			return true; // Commit
+		});
+
+		return std::make_pair(true, "");
+	} catch (const std::exception &e) {
+		return std::make_pair(false, std::string("Failed to remove parents: ") + e.what());
+	}
+}
+
+std::pair<bool, std::string> Lot::remove_paths_from_db(const std::vector<std::string> &paths) {
+	try {
+		auto &storage = db::StorageManager::get_storage();
+		using namespace sqlite_orm;
+
+		// Use transaction for batch delete atomicity
+		storage.transaction([&] {
+			for (const auto &path : paths) {
+				// Paths are unique, so we don't need lot_name in the condition
+				storage.remove_all<db::Path>(where(c(&db::Path::path) == path));
+			}
+			return true; // Commit
+		});
+
+		return std::make_pair(true, "");
+	} catch (const std::exception &e) {
+		return std::make_pair(false, std::string("Failed to remove paths: ") + e.what());
+	}
+}
+
+} // namespace lotman
