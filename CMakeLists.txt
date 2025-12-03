@@ -10,39 +10,39 @@ project(
 option(LOTMAN_BUILD_UNITTESTS "Build the lotman-cpp unit tests" OFF)
 option(LOTMAN_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF)
 
-set( CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}" )
+set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 
-set( CMAKE_BUILD_TYPE RelWithDebInfo ) # -g -O2
+set(CMAKE_BUILD_TYPE RelWithDebInfo) # -g -O2
 
-include( GNUInstallDirs )
+include(GNUInstallDirs)
 
 # Allow user to override library install directory
-set( LIB_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}" CACHE PATH "Installation directory for libraries" )
+set(LIB_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}" CACHE PATH "Installation directory for libraries")
 
-if( APPLE )
-  find_package( Sqlite3 REQUIRED )
-  find_package( nlohmann_json REQUIRED )
-  find_package( nlohmann_json_schema_validator REQUIRED )
-  set( CMAKE_MACOSX_RPATH ON )
+if(APPLE)
+  find_package(Sqlite3 REQUIRED)
+  find_package(nlohmann_json REQUIRED)
+  find_package(nlohmann_json_schema_validator REQUIRED)
+  set(CMAKE_MACOSX_RPATH ON)
 
-elseif( UNIX )
-  include ( FindPkgConfig )
+elseif(UNIX)
+  include (FindPkgConfig)
 
-  pkg_check_modules( SQLITE REQUIRED sqlite3 )
-  find_package( nlohmann_json REQUIRED )
-  find_package( nlohmann_json_schema_validator REQUIRED )
+  pkg_check_modules(SQLITE REQUIRED sqlite3)
+  find_package(nlohmann_json REQUIRED)
+  find_package(nlohmann_json_schema_validator REQUIRED)
 endif()
 
-add_library( LotMan SHARED src/lotman.cpp src/lotman_db.cpp src/lotman_internal.cpp )
-target_compile_features( LotMan PUBLIC cxx_std_17 )
+add_library(LotMan SHARED src/lotman.cpp src/lotman_db.cpp src/lotman_internal.cpp)
+target_compile_features(LotMan PUBLIC cxx_std_17)
 
-configure_file( lotman_version.h.in lotman_version.h )
-include_directories( "${PROJECT_BINARY_DIR}" )
+configure_file(lotman_version.h.in lotman_version.h)
+include_directories("${PROJECT_BINARY_DIR}")
 
-target_link_libraries( LotMan PUBLIC ${SQLITE_LIBRARIES} nlohmann_json nlohmann_json_schema_validator )
+target_link_libraries(LotMan PUBLIC ${SQLITE_LIBRARIES} nlohmann_json nlohmann_json_schema_validator)
 
-if ( NOT APPLE AND UNIX )
-  set_target_properties( LotMan PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols" )
+if (NOT APPLE AND UNIX)
+  set_target_properties(LotMan PROPERTIES LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-symbols")
 endif()
 
 install(
@@ -57,15 +57,15 @@ install(
   )
 
 
-if( LOTMAN_BUILD_UNITTESTS )
-	if( NOT LOTMAN_EXTERNAL_GTEST )
-    include( ExternalProject )
-    ExternalProject_Add( gtest
+if(LOTMAN_BUILD_UNITTESTS)
+	if(NOT LOTMAN_EXTERNAL_GTEST)
+    include(ExternalProject)
+    ExternalProject_Add(gtest
         PREFIX external/gtest
         URL ${CMAKE_CURRENT_SOURCE_DIR}/vendor/gtest
         INSTALL_COMMAND :
     )
   endif()
   enable_testing()
-  add_subdirectory( test )
+  add_subdirectory(test)
 endif()
