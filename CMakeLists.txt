@@ -14,16 +14,16 @@ set( CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}" )
 
 set( CMAKE_BUILD_TYPE RelWithDebInfo ) # -g -O2
 
+include( GNUInstallDirs )
+
 # Allow user to override library install directory
 set( LIB_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}" CACHE PATH "Installation directory for libraries" )
-
-include( GNUInstallDirs )
 
 if( APPLE )
   find_package( Sqlite3 REQUIRED )
   find_package( nlohmann_json REQUIRED )
   find_package( nlohmann_json_schema_validator REQUIRED )
-  set(CMAKE_MACOSX_RPATH ON)
+  set( CMAKE_MACOSX_RPATH ON )
 
 elseif( UNIX )
   include ( FindPkgConfig )
@@ -59,8 +59,8 @@ install(
 
 if( LOTMAN_BUILD_UNITTESTS )
 	if( NOT LOTMAN_EXTERNAL_GTEST )
-    include(ExternalProject)
-    ExternalProject_Add(gtest
+    include( ExternalProject )
+    ExternalProject_Add( gtest
         PREFIX external/gtest
         URL ${CMAKE_CURRENT_SOURCE_DIR}/vendor/gtest
         INSTALL_COMMAND :
