@@ -36,6 +36,21 @@ size_t ConnectionPool::m_max_size = 5;
 std::unordered_map<sqlite3 *, std::unordered_map<std::string, sqlite3_stmt *>> PreparedStatementCache::m_cache;
 std::mutex PreparedStatementCache::m_mutex;
 
+void migrate_db(Storage &storage, int current_version, int target_version) {
+	for (int v = current_version + 1; v <= target_version; ++v) {
+		switch (v) {
+			/*
+			case 2:
+				// Example migration:
+				// storage.execute("ALTER TABLE owners ADD COLUMN new_col TEXT");
+				break;
+			*/
+			default:
+				throw std::runtime_error("No migration defined for version " + std::to_string(v));
+		}
+	}
+}
+
 std::pair<bool, std::string> StorageManager::get_db_path() {
 	const char *lot_env_dir = getenv("LOT_HOME");
 
@@ -96,8 +111,66 @@ Storage &StorageManager::get_storage() {
 		// Set busy timeout
 		m_storage->busy_timeout(*lotman_db_timeout);
 
+		// Check for existing database state before syncing schema
+		bool schema_versions_exists = false;
+		bool owners_exists = false;
+
+		try {
+			m_storage->count<SchemaVersion>();
+			schema_versions_exists = true;
+		} catch (...) {
+			schema_versions_exists = false;
+		}
+
+		// If there's no schema_versions table, check for owners table to detect databases
+		// that exist but predate schema_versions
+		if (!schema_versions_exists) {
+			try {
+				m_storage->count<Owner>();
+				owners_exists = true;
+			} catch (...) {
+				owners_exists = false;
+			}
+		}
+
 		// Create tables if they don't exist
 		m_storage->sync_schema();
+
+		// Initialize or migrate database version
+		const int TARGET_DB_VERSION = 1;
+		int current_version = 0;
+
+		if (schema_versions_exists) {
+			auto versions = m_storage->get_all<SchemaVersion>();
+			if (!versions.empty()) {
+				current_version = versions[0].version;
+			} else {
+				// Table existed but was empty? Should not happen if we manage it correctly.
+				// Treat as fresh or v1?
+				if (owners_exists)
+					current_version = 1;
+				else
+					current_version = TARGET_DB_VERSION;
+
+				m_storage->replace(SchemaVersion{1, current_version});
+			}
+		} else {
+			// schema_versions table did not exist.
+			if (owners_exists) {
+				// Existing v1 database
+				current_version = 1;
+				m_storage->replace(SchemaVersion{1, current_version});
+			} else {
+				// Fresh database
+				current_version = TARGET_DB_VERSION;
+				m_storage->replace(SchemaVersion{1, current_version});
+			}
+		}
+
+		if (current_version < TARGET_DB_VERSION) {
+			migrate_db(*m_storage, current_version, TARGET_DB_VERSION);
+			m_storage->replace(SchemaVersion{1, TARGET_DB_VERSION});
+		}
 
 		m_initialized = true;
 	}
