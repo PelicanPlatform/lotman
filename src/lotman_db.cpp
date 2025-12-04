@@ -36,6 +36,9 @@ size_t ConnectionPool::m_max_size = 5;
 std::unordered_map<sqlite3 *, std::unordered_map<std::string, sqlite3_stmt *>> PreparedStatementCache::m_cache;
 std::mutex PreparedStatementCache::m_mutex;
 
+// Current target database schema version. Increment this when adding new migrations.
+static constexpr int TARGET_DB_VERSION = 1;
+
 /**
  * Perform explicit schema migrations between database versions.
  *
@@ -52,6 +55,9 @@ std::mutex PreparedStatementCache::m_mutex;
  * @throws std::runtime_error if migration fails or is not defined
  */
 void migrate_db(Storage &storage, int current_version, int target_version) {
+	// Suppress unused parameter warning when no migrations are defined yet
+	static_cast<void>(storage);
+
 	for (int v = current_version + 1; v <= target_version; ++v) {
 		switch (v) {
 			/*
@@ -187,7 +193,6 @@ Storage &StorageManager::get_storage() {
 		}
 
 		// Initialize or migrate database version
-		const int TARGET_DB_VERSION = 1;
 		int current_version = 0;
 
 		if (schema_versions_exists) {

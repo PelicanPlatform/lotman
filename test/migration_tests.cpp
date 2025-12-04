@@ -48,18 +48,15 @@ TEST_F(MigrationTest, TestV0ToV1Migration) {
 
 	// Now remove the schema_versions table to simulate a v0 database
 	{
-		sqlite3 *db;
-		int rc = sqlite3_open(db_path.c_str(), &db);
-		ASSERT_EQ(rc, SQLITE_OK);
+		auto db = open_sqlite3_db(db_path);
 
 		char *errMsg = nullptr;
-		rc = sqlite3_exec(db, "DROP TABLE schema_versions", nullptr, nullptr, &errMsg);
+		int rc = sqlite3_exec(db.get(), "DROP TABLE schema_versions", nullptr, nullptr, &errMsg);
 		if (rc != SQLITE_OK) {
-			std::cerr << "SQL error: " << errMsg << std::endl;
+			std::string err_str = errMsg ? errMsg : "unknown error";
 			sqlite3_free(errMsg);
+			FAIL() << "SQL error: " << err_str;
 		}
-		ASSERT_EQ(rc, SQLITE_OK);
-		sqlite3_close(db);
 	}
 
 	// 2. Re-initialize StorageManager (should detect existing DB without version and set to v1)
@@ -138,18 +135,15 @@ TEST_F(MigrationTest, TestEmptySchemaVersionsTable) {
 
 	// Delete all rows from schema_versions table (leaving it empty)
 	{
-		sqlite3 *db;
-		int rc = sqlite3_open(db_path.c_str(), &db);
-		ASSERT_EQ(rc, SQLITE_OK);
+		auto db = open_sqlite3_db(db_path);
 
 		char *errMsg = nullptr;
-		rc = sqlite3_exec(db, "DELETE FROM schema_versions", nullptr, nullptr, &errMsg);
+		int rc = sqlite3_exec(db.get(), "DELETE FROM schema_versions", nullptr, nullptr, &errMsg);
 		if (rc != SQLITE_OK) {
-			std::cerr << "SQL error: " << errMsg << std::endl;
+			std::string err_str = errMsg ? errMsg : "unknown error";
 			sqlite3_free(errMsg);
+			FAIL() << "SQL error: " << err_str;
 		}
-		ASSERT_EQ(rc, SQLITE_OK);
-		sqlite3_close(db);
 	}
 
 	// Re-initialize StorageManager - should handle empty table correctly
@@ -190,20 +184,19 @@ TEST_F(MigrationTest, TestCorruptedDBRejected) {
 	std::string db_path = db_dir + "/lotman_cpp.sqlite";
 
 	// Create a database with an incompatible schema (missing columns, wrong types, etc.)
-	sqlite3 *db;
-	int rc = sqlite3_open(db_path.c_str(), &db);
-	ASSERT_EQ(rc, SQLITE_OK);
+	{
+		auto db = open_sqlite3_db(db_path);
 
-	// Create an owners table with a different schema (simulating corruption or incompatibility)
-	const char *sql = "CREATE TABLE owners (lot_name TEXT PRIMARY KEY, owner TEXT, extra_column INTEGER)";
-	char *errMsg = nullptr;
-	rc = sqlite3_exec(db, sql, nullptr, nullptr, &errMsg);
-	if (rc != SQLITE_OK) {
-		std::cerr << "SQL error: " << errMsg << std::endl;
-		sqlite3_free(errMsg);
+		// Create an owners table with a different schema (simulating corruption or incompatibility)
+		const char *sql = "CREATE TABLE owners (lot_name TEXT PRIMARY KEY, owner TEXT, extra_column INTEGER)";
+		char *errMsg = nullptr;
+		int rc = sqlite3_exec(db.get(), sql, nullptr, nullptr, &errMsg);
+		if (rc != SQLITE_OK) {
+			std::string err_str = errMsg ? errMsg : "unknown error";
+			sqlite3_free(errMsg);
+			FAIL() << "SQL error: " << err_str;
+		}
 	}
-	ASSERT_EQ(rc, SQLITE_OK);
-	sqlite3_close(db);
 
 	// Try to initialize StorageManager - should throw an error
 	char *raw_err = nullptr;

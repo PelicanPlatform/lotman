@@ -15,6 +15,8 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <sqlite3.h>
+#include <stdexcept>
 #include <string>
 
 // RAII wrappers for C-style memory management
@@ -33,6 +35,35 @@ struct StringListDeleter {
 	}
 };
 using UniqueStringList = std::unique_ptr<char *, StringListDeleter>;
+
+// RAII wrapper for sqlite3 database connections
+struct Sqlite3Deleter {
+	void operator()(sqlite3 *db) const {
+		if (db)
+			sqlite3_close(db);
+	}
+};
+using UniqueSqlite3 = std::unique_ptr<sqlite3, Sqlite3Deleter>;
+
+/**
+ * Helper to open a sqlite3 database with RAII management.
+ * @param path The path to the database file
+ * @return A unique_ptr managing the sqlite3 connection
+ * @throws std::runtime_error if the database cannot be opened
+ */
+inline UniqueSqlite3 open_sqlite3_db(const std::string &path) {
+	sqlite3 *db = nullptr;
+	int rc = sqlite3_open(path.c_str(), &db);
+	if (rc != SQLITE_OK) {
+		if (db) {
+			std::string err = sqlite3_errmsg(db);
+			sqlite3_close(db);
+			throw std::runtime_error("Failed to open database: " + err);
+		}
+		throw std::runtime_error("Failed to open database");
+	}
+	return UniqueSqlite3(db);
+}
 
 /**
  * Creates a unique temporary directory for test isolation.
