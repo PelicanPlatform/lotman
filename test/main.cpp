@@ -680,13 +680,13 @@ TEST_F(LotManTest, RemovePathsAdvancedTest) {
 	bool found_path3 = false;
 	for (const auto &path_obj : paths_after) {
 		std::string path = path_obj["path"];
-		if (path == "/test/path2") {
+		if (path == "/test/path2/") {
 			found_path2 = true;
 		}
-		if (path == "/test/path1") {
+		if (path == "/test/path1/") {
 			found_path1 = true;
 		}
-		if (path == "/test/path3") {
+		if (path == "/test/path3/") {
 			found_path3 = true;
 		}
 	}
@@ -1174,13 +1174,13 @@ TEST_F(LotManTest, GetLotDirs) {
 
 	json json_out = json::parse(output.get());
 	for (const auto &path_obj : json_out) {
-		if (path_obj["path"] == "/1/2/3/4" && path_obj["recursive"] == true && path_obj["lot_name"] == "lot4") {
+		if (path_obj["path"] == "/1/2/3/4/" && path_obj["recursive"] == true && path_obj["lot_name"] == "lot4") {
 			continue;
-		} else if (path_obj["path"] == "/345" && path_obj["recursive"] == true && path_obj["lot_name"] == "lot4") {
+		} else if (path_obj["path"] == "/345/" && path_obj["recursive"] == true && path_obj["lot_name"] == "lot4") {
 			continue;
-		} else if (path_obj["path"] == "/456" && path_obj["recursive"] == false && path_obj["lot_name"] == "lot5") {
+		} else if (path_obj["path"] == "/456/" && path_obj["recursive"] == false && path_obj["lot_name"] == "lot5") {
 			continue;
-		} else if (path_obj["path"] == "/567" && path_obj["recursive"] == true && path_obj["lot_name"] == "lot5") {
+		} else if (path_obj["path"] == "/567/" && path_obj["recursive"] == true && path_obj["lot_name"] == "lot5") {
 			continue;
 		} else {
 			ASSERT_TRUE(false) << "Unexpected path object: " << output.get();
@@ -1484,17 +1484,17 @@ TEST_F(LotManTest, GetLotJSONTest) {
 		"paths": [
 			{
 				"lot_name": "lot3",
-				"path": "/another/path",
+				"path": "/another/path/",
 				"recursive": true
 			},
 			{
 				"lot_name": "lot3",
-				"path": "/updated/path",
+				"path": "/updated/path/",
 				"recursive": false
 			},
 			{
 				"lot_name": "lot3",
-				"path": "/foo/barr",
+				"path": "/foo/barr/",
 				"recursive": true
 			}
 		],
@@ -1542,37 +1542,37 @@ TEST_F(LotManTest, GetLotJSONTest) {
 		"paths": [
 			{
 				"lot_name": "lot3",
-				"path": "/another/path",
+				"path": "/another/path/",
 				"recursive": true
 			},
 			{
 				"lot_name": "lot3",
-				"path": "/updated/path",
+				"path": "/updated/path/",
 				"recursive": false
 			},
 			{
 				"lot_name": "lot3",
-				"path": "/foo/barr",
+				"path": "/foo/barr/",
 				"recursive": true
 			},
 			{
 				"lot_name": "lot4",
-				"path": "/1/2/3/4",
+				"path": "/1/2/3/4/",
 				"recursive": true
 			},
 			{
 				"lot_name": "lot4",
-				"path": "/345",
+				"path": "/345/",
 				"recursive": true
 			},
 			{
 				"lot_name": "lot5",
-				"path": "/456",
+				"path": "/456/",
 				"recursive": false
 			},
 			{
 				"lot_name": "lot5",
-				"path": "/567",
+				"path": "/567/",
 				"recursive": true
 			}
 		],
@@ -1835,6 +1835,135 @@ TEST_F(LotManTest, ContextIntTest) {
 	rv = lotman_get_context_int("invalid_key", &output, &raw_err);
 	err_msg.reset(raw_err);
 	EXPECT_EQ(rv, -1) << "Expected error for invalid context key";
+}
+
+TEST_F(LotManTest, PathTrailingSlashNormalizationTest) {
+	// This test verifies that paths input without trailing slashes are:
+	// 1. Stored with trailing slashes in the database
+	// 2. Can be looked up both with and without trailing slashes
+	// 3. Are returned with trailing slashes in API output
+
+	char *raw_err = nullptr;
+	int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	rv = lotman_set_context_str("caller", "owner1", &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Create default lot (required)
+	const char *default_lot = R"({
+		"lot_name": "default",
+		"owner": "owner1",
+		"parents": ["default"],
+		"paths": [{"path": "/default", "recursive": true}],
+		"management_policy_attrs": {
+			"dedicated_GB": 100,
+			"opportunistic_GB": 50,
+			"max_num_objects": 1000,
+			"creation_time": 1700000000,
+			"expiration_time": 1800000000,
+			"deletion_time": 1900000000
+		}
+	})";
+	rv = lotman_add_lot(default_lot, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Create a lot with paths that do NOT have trailing slashes
+	const char *test_lot = R"({
+		"lot_name": "slash_test_lot",
+		"owner": "owner1",
+		"parents": ["slash_test_lot"],
+		"paths": [
+			{"path": "/no/slash/here", "recursive": true},
+			{"path": "/another/path/no/slash", "recursive": false}
+		],
+		"management_policy_attrs": {
+			"dedicated_GB": 10,
+			"opportunistic_GB": 5,
+			"max_num_objects": 100,
+			"creation_time": 1700000000,
+			"expiration_time": 1800000000,
+			"deletion_time": 1900000000
+		}
+	})";
+	rv = lotman_add_lot(test_lot, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Verify paths are returned WITH trailing slashes
+	char *raw_output = nullptr;
+	rv = lotman_get_lot_dirs("slash_test_lot", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	UniqueCString output(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json paths_json = json::parse(output.get());
+	ASSERT_EQ(paths_json.size(), 2);
+
+	bool found_path1 = false;
+	bool found_path2 = false;
+	for (const auto &path_obj : paths_json) {
+		std::string path = path_obj["path"];
+		// All paths should end with /
+		EXPECT_EQ(path.back(), '/') << "Path '" << path << "' should end with trailing slash";
+
+		if (path == "/no/slash/here/") {
+			found_path1 = true;
+		}
+		if (path == "/another/path/no/slash/") {
+			found_path2 = true;
+		}
+	}
+	EXPECT_TRUE(found_path1) << "Expected normalized path '/no/slash/here/'";
+	EXPECT_TRUE(found_path2) << "Expected normalized path '/another/path/no/slash/'";
+
+	// Verify lookup works WITHOUT trailing slash
+	char **lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/no/slash/here", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "slash_test_lot");
+	lotman_free_string_list(lots_output);
+
+	// Verify lookup works WITH trailing slash
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/no/slash/here/", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "slash_test_lot");
+	lotman_free_string_list(lots_output);
+
+	// Verify subdirectory lookup works (for recursive path)
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/no/slash/here/subdir/deeper", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "slash_test_lot");
+	lotman_free_string_list(lots_output);
+
+	// Verify path removal works without trailing slash
+	const char *remove_path = R"({
+		"paths": ["/another/path/no/slash"]
+	})";
+	rv = lotman_rm_paths_from_lots(remove_path, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Verify only one path remains
+	raw_output = nullptr;
+	rv = lotman_get_lot_dirs("slash_test_lot", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	paths_json = json::parse(output.get());
+	ASSERT_EQ(paths_json.size(), 1);
+	EXPECT_EQ(paths_json[0]["path"], "/no/slash/here/");
 }
 } // namespace
 
