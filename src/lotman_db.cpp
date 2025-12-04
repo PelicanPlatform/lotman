@@ -143,7 +143,8 @@ Storage &StorageManager::get_storage() {
 		try {
 			m_storage->count<SchemaVersion>();
 			schema_versions_exists = true;
-		} catch (...) {
+		} catch (const std::system_error &) {
+			// Table does not exist - this is expected for fresh or legacy databases
 			schema_versions_exists = false;
 		}
 
@@ -153,7 +154,8 @@ Storage &StorageManager::get_storage() {
 			try {
 				m_storage->count<Owner>();
 				owners_exists = true;
-			} catch (...) {
+			} catch (const std::system_error &) {
+				// Table does not exist - this is a fresh database
 				owners_exists = false;
 			}
 		}
@@ -194,8 +196,17 @@ Storage &StorageManager::get_storage() {
 				current_version = version_ptr->version;
 			} else {
 				// Table existed but no row with id=1. Should not happen if we manage it correctly.
-				// Treat as fresh or v1?
-				if (owners_exists)
+				// Need to check for owners table here since we skipped that check earlier
+				// (owners_exists was only populated when schema_versions_exists was false)
+				bool has_owners = false;
+				try {
+					m_storage->count<Owner>();
+					has_owners = true;
+				} catch (const std::system_error &) {
+					has_owners = false;
+				}
+
+				if (has_owners)
 					current_version = 1;
 				else
 					current_version = TARGET_DB_VERSION;

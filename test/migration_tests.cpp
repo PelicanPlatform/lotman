@@ -139,6 +139,75 @@ TEST_F(MigrationTest, TestFreshDBVersion) {
 	}
 }
 
+TEST_F(MigrationTest, TestEmptySchemaVersionsTable) {
+	// This test verifies that an empty schema_versions table (edge case) is handled correctly.
+	// This could happen if the table was created but no version row was inserted.
+	std::string db_dir = tmp_dir + "/.lot";
+	std::filesystem::create_directories(db_dir);
+	std::string db_path = db_dir + "/lotman_cpp.sqlite";
+
+	// First, let StorageManager create a proper database with all tables
+	{
+		char *raw_err = nullptr;
+		int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
+		UniqueCStringMig err(raw_err);
+		ASSERT_EQ(rv, 0) << "Failed to set lot_home: " << (err.get() ? err.get() : "unknown error");
+
+		auto &storage = lotman::db::StorageManager::get_storage();
+
+		// Insert test data
+		storage.replace(lotman::db::Owner{"test_lot_empty", "test_owner_empty"});
+
+		// Reset to close the connection
+		lotman::db::StorageManager::reset();
+	}
+
+	// Delete all rows from schema_versions table (leaving it empty)
+	{
+		sqlite3 *db;
+		int rc = sqlite3_open(db_path.c_str(), &db);
+		ASSERT_EQ(rc, SQLITE_OK);
+
+		char *errMsg = nullptr;
+		rc = sqlite3_exec(db, "DELETE FROM schema_versions", nullptr, nullptr, &errMsg);
+		if (rc != SQLITE_OK) {
+			std::cerr << "SQL error: " << errMsg << std::endl;
+			sqlite3_free(errMsg);
+		}
+		ASSERT_EQ(rc, SQLITE_OK);
+		sqlite3_close(db);
+	}
+
+	// Re-initialize StorageManager - should handle empty table correctly
+	{
+		char *raw_err = nullptr;
+		int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
+		UniqueCStringMig err(raw_err);
+		ASSERT_EQ(rv, 0) << "Failed to set lot_home: " << (err.get() ? err.get() : "unknown error");
+
+		auto &storage = lotman::db::StorageManager::get_storage();
+
+		// Verify schema_versions table was populated
+		try {
+			auto versions = storage.get_all<lotman::db::SchemaVersion>();
+			ASSERT_EQ(versions.size(), 1);
+			ASSERT_EQ(versions[0].version, 1);
+		} catch (const std::exception &e) {
+			FAIL() << "Failed to query schema_versions: " << e.what();
+		}
+
+		// Verify existing data was preserved
+		try {
+			auto owners = storage.get_all<lotman::db::Owner>();
+			ASSERT_EQ(owners.size(), 1);
+			ASSERT_EQ(owners[0].lot_name, "test_lot_empty");
+			ASSERT_EQ(owners[0].owner, "test_owner_empty");
+		} catch (const std::exception &e) {
+			FAIL() << "Failed to query owners (data not preserved?): " << e.what();
+		}
+	}
+}
+
 TEST_F(MigrationTest, TestCorruptedDBRejected) {
 	// This test verifies that corrupted or incompatible databases are rejected
 	// with a clear error message, rather than silently losing data.
