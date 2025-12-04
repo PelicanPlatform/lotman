@@ -1,43 +1,17 @@
 #include "../src/lotman.h"
 #include "../src/lotman_db.h"
+#include "test_utils.h"
 
-#include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <memory>
 #include <sqlite3.h>
-
-// RAII wrapper for C-style memory management (consistent with other test files)
-struct CStringDeleterMig {
-	void operator()(char *ptr) const {
-		if (ptr)
-			free(ptr);
-	}
-};
-using UniqueCStringMig = std::unique_ptr<char, CStringDeleterMig>;
-
-// Helper to create temp directory
-std::string create_temp_directory_mig() {
-	std::string temp_dir_template = "/tmp/lotman_mig_test_XXXXXX";
-	char temp_dir_name[temp_dir_template.size() + 1];
-	std::strcpy(temp_dir_name, temp_dir_template.c_str());
-
-	char *mkdtemp_result = mkdtemp(temp_dir_name);
-	if (mkdtemp_result == nullptr) {
-		std::cerr << "Failed to create temporary directory\n";
-		exit(1);
-	}
-
-	return std::string(mkdtemp_result);
-}
 
 class MigrationTest : public ::testing::Test {
   protected:
 	std::string tmp_dir;
 
 	void SetUp() override {
-		tmp_dir = create_temp_directory_mig();
+		tmp_dir = create_temp_directory("lotman_mig_test");
 		// Reset storage manager to ensure clean state
 		lotman::db::StorageManager::reset();
 	}
@@ -60,7 +34,7 @@ TEST_F(MigrationTest, TestV0ToV1Migration) {
 	{
 		char *raw_err = nullptr;
 		int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
-		UniqueCStringMig err(raw_err);
+		UniqueCString err(raw_err);
 		ASSERT_EQ(rv, 0) << "Failed to set lot_home: " << (err.get() ? err.get() : "unknown error");
 
 		auto &storage = lotman::db::StorageManager::get_storage();
@@ -92,7 +66,7 @@ TEST_F(MigrationTest, TestV0ToV1Migration) {
 	{
 		char *raw_err = nullptr;
 		int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
-		UniqueCStringMig err(raw_err);
+		UniqueCString err(raw_err);
 		ASSERT_EQ(rv, 0) << "Failed to set lot_home: " << (err.get() ? err.get() : "unknown error");
 
 		auto &storage = lotman::db::StorageManager::get_storage();
@@ -124,7 +98,7 @@ TEST_F(MigrationTest, TestFreshDBVersion) {
 	// 2. Initialize StorageManager
 	char *raw_err = nullptr;
 	int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
-	UniqueCStringMig err(raw_err);
+	UniqueCString err(raw_err);
 	ASSERT_EQ(rv, 0) << "Failed to set lot_home: " << (err.get() ? err.get() : "unknown error");
 
 	auto &storage = lotman::db::StorageManager::get_storage();
@@ -150,7 +124,7 @@ TEST_F(MigrationTest, TestEmptySchemaVersionsTable) {
 	{
 		char *raw_err = nullptr;
 		int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
-		UniqueCStringMig err(raw_err);
+		UniqueCString err(raw_err);
 		ASSERT_EQ(rv, 0) << "Failed to set lot_home: " << (err.get() ? err.get() : "unknown error");
 
 		auto &storage = lotman::db::StorageManager::get_storage();
@@ -182,7 +156,7 @@ TEST_F(MigrationTest, TestEmptySchemaVersionsTable) {
 	{
 		char *raw_err = nullptr;
 		int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
-		UniqueCStringMig err(raw_err);
+		UniqueCString err(raw_err);
 		ASSERT_EQ(rv, 0) << "Failed to set lot_home: " << (err.get() ? err.get() : "unknown error");
 
 		auto &storage = lotman::db::StorageManager::get_storage();
@@ -234,7 +208,7 @@ TEST_F(MigrationTest, TestCorruptedDBRejected) {
 	// Try to initialize StorageManager - should throw an error
 	char *raw_err = nullptr;
 	int rv = lotman_set_context_str("lot_home", tmp_dir.c_str(), &raw_err);
-	UniqueCStringMig err(raw_err);
+	UniqueCString err(raw_err);
 	ASSERT_EQ(rv, 0) << "Failed to set lot_home: " << (err.get() ? err.get() : "unknown error");
 
 	// This should throw because the schema is incompatible
