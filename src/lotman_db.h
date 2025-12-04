@@ -106,9 +106,14 @@ struct LotUsage {
 	int64_t children_objects_being_written;
 };
 
+/**
+ * Tracks the database schema version for migration support.
+ * There is always exactly one row in the schema_versions table with id=1.
+ * The 'version' field indicates the current schema version of the database.
+ */
 struct SchemaVersion {
-	int id;
-	int version;
+	int id;		 // Always 1 (single-row table)
+	int version; // Current schema version number
 };
 
 /**
