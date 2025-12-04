@@ -11,14 +11,12 @@
 #include "../src/lotman.h"
 
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <memory>
 #include <sqlite3.h>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 // RAII wrappers for C-style memory management
 struct CStringDeleter {
@@ -73,16 +71,14 @@ inline UniqueSqlite3 open_sqlite3_db(const std::string &path) {
  */
 inline std::string create_temp_directory(const std::string &prefix = "lotman_test") {
 	std::string temp_dir_template = "/tmp/" + prefix + "_XXXXXX";
-	std::vector<char> temp_dir_name(temp_dir_template.begin(), temp_dir_template.end());
-	temp_dir_name.push_back('\0');
 
-	char *mkdtemp_result = mkdtemp(temp_dir_name.data());
+	char *mkdtemp_result = mkdtemp(temp_dir_template.data());
 	if (mkdtemp_result == nullptr) {
 		std::cerr << "Failed to create temporary directory\n";
 		exit(1);
 	}
 
-	return std::string(mkdtemp_result);
+	return temp_dir_template;
 }
 
 #endif // LOTMAN_TEST_UTILS_H
