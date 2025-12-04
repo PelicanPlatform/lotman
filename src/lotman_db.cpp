@@ -55,27 +55,35 @@ static constexpr int TARGET_DB_VERSION = 1;
  * @throws std::runtime_error if migration fails or is not defined
  */
 void migrate_db(Storage &storage, int current_version, int target_version) {
-	// Suppress unused parameter warning when no migrations are defined yet
-	static_cast<void>(storage);
-
 	for (int v = current_version + 1; v <= target_version; ++v) {
 		switch (v) {
-			/*
-			case 2:
-				// Example migration - use explicit ALTER TABLE for safety:
-				// storage.execute("ALTER TABLE owners ADD COLUMN new_col TEXT DEFAULT ''");
+			case 1: {
+				// Migration v0 -> v1: Ensure all paths in the database have trailing slashes.
+				// This prevents string matching bugs where paths like "/foo" and "/foobar"
+				// could be incorrectly matched.
 				//
-				// NOTE: SQLite ALTER TABLE only supports:
-				// - ADD COLUMN (column must have DEFAULT or be nullable)
-				// - RENAME TABLE
-				// - RENAME COLUMN (SQLite 3.25+)
-				// - DROP COLUMN (SQLite 3.35+)
+				// v0 databases are those created before the schema_versions table existed.
+				// They may have paths stored without trailing slashes.
 				//
-				// For more complex changes that SQLite doesn't support directly,
-				// you must use the backup-copy-drop-rename pattern manually,
-				// ensuring data is preserved.
+				// Note: This iterates through paths and issues individual UPDATE statements.
+				// While a single raw SQL UPDATE would be more efficient, this approach:
+				// 1. Uses the ORM consistently with the rest of the codebase
+				// 2. Only runs once per database (on upgrade from v0)
+				// 3. The paths table is typically small enough that this is acceptable
+				using namespace sqlite_orm;
+
+				auto all_paths = storage.get_all<Path>();
+				for (auto &path_record : all_paths) {
+					if (!path_record.path.empty() && path_record.path.back() != '/') {
+						std::string old_path = path_record.path;
+						path_record.path += '/';
+						storage.update_all(
+							set(c(&Path::path) = path_record.path),
+							where(c(&Path::lot_name) == path_record.lot_name and c(&Path::path) == old_path));
+					}
+				}
 				break;
-			*/
+			}
 			default:
 				throw std::runtime_error("No migration defined for version " + std::to_string(v));
 		}
@@ -221,8 +229,9 @@ Storage &StorageManager::get_storage() {
 		} else {
 			// schema_versions table did not exist.
 			if (owners_exists) {
-				// Existing v1 database
-				current_version = 1;
+				// Existing v0 database (pre-schema-versioning)
+				// These databases need migration to add trailing slashes to paths
+				current_version = 0;
 				m_storage->replace(SchemaVersion{1, current_version});
 			} else {
 				// Fresh database
@@ -806,10 +815,11 @@ std::pair<bool, std::string> Lot::write_new() {
 				storage.replace(parent_record);
 			}
 
-			// Insert paths
+			// Insert paths - normalize with trailing slash to prevent prefix matching bugs
+			// (e.g., "/foo" vs "/foobar" confusion)
 			for (const auto &path : paths) {
-				db::Path path_record{lot_name, path["path"].get<std::string>(),
-									 static_cast<int>(path["recursive"].get<bool>())};
+				std::string normalized_path = ensure_trailing_slash(path["path"].get<std::string>());
+				db::Path path_record{lot_name, normalized_path, static_cast<int>(path["recursive"].get<bool>())};
 				storage.replace(path_record);
 			}
 
@@ -945,8 +955,9 @@ std::pair<bool, std::string> Lot::store_new_paths(const std::vector<nlohmann::js
 		// Use transaction for batch insert atomicity
 		storage.transaction([&] {
 			for (const auto &path : new_paths) {
-				db::Path path_record{lot_name, path["path"].get<std::string>(),
-									 static_cast<int>(path["recursive"].get<bool>())};
+				// Normalize with trailing slash to prevent prefix matching bugs
+				std::string normalized_path = ensure_trailing_slash(path["path"].get<std::string>());
+				db::Path path_record{lot_name, normalized_path, static_cast<int>(path["recursive"].get<bool>())};
 				storage.replace(path_record);
 			}
 			return true; // Commit
@@ -1005,8 +1016,10 @@ std::pair<bool, std::string> Lot::remove_paths_from_db(const std::vector<std::st
 		// Use transaction for batch delete atomicity
 		storage.transaction([&] {
 			for (const auto &path : paths) {
+				// Normalize path with trailing slash to match stored format
+				std::string normalized_path = ensure_trailing_slash(path);
 				// Paths are unique, so we don't need lot_name in the condition
-				storage.remove_all<db::Path>(where(c(&db::Path::path) == path));
+				storage.remove_all<db::Path>(where(c(&db::Path::path) == normalized_path));
 			}
 			return true; // Commit
 		});

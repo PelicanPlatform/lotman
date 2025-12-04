@@ -588,7 +588,9 @@ std::pair<std::string, std::string> lotman::Lot::get_lot_from_dir(const std::str
 		auto &storage = db::StorageManager::get_storage();
 		using namespace sqlite_orm;
 
-		auto lot_names = storage.select(&db::Path::lot_name, where(c(&db::Path::path) == dir_path));
+		// Normalize path with trailing slash to match stored format
+		std::string normalized_path = ensure_trailing_slash(dir_path);
+		auto lot_names = storage.select(&db::Path::lot_name, where(c(&db::Path::path) == normalized_path));
 
 		if (lot_names.empty()) {
 			return std::make_pair("", ""); // Nothing existed, and no error. Return empty strings!
@@ -1046,11 +1048,14 @@ std::pair<bool, std::string> lotman::Lot::update_paths(const json &update_arr) {
 
 	// Iterate through updates, first perform recursive update THEN path
 	for (const auto &update_obj : update_arr /*update_map*/) {
+		// Normalize paths with trailing slash
+		std::string current_path = ensure_trailing_slash(update_obj["current"].get<std::string>());
+		std::string new_path = ensure_trailing_slash(update_obj["new"].get<std::string>());
+
 		std::map<int64_t, std::vector<int>> recursive_update_int_map{
 			{update_obj["recursive"].get<int>(),
 			 {1}}}; // Unfortunately using int64_t for these bools to write less code
-		std::map<std::string, std::vector<int>> recursive_update_str_map{{lot_name, {2}},
-																		 {/*pair.first*/ update_obj["current"], {3}}};
+		std::map<std::string, std::vector<int>> recursive_update_str_map{{lot_name, {2}}, {current_path, {3}}};
 		auto rp = store_updates(recursive_update_stmt, recursive_update_str_map, recursive_update_int_map);
 		if (!rp.first) {
 			std::string int_err = rp.second;
@@ -1060,7 +1065,7 @@ std::pair<bool, std::string> lotman::Lot::update_paths(const json &update_arr) {
 
 		// Path update
 		std::map<std::string, std::vector<int>> paths_update_str_map{
-			{update_obj["new"], {1}}, {lot_name, {2}}, {/*pair.first*/ update_obj["current"], {3}}};
+			{new_path, {1}}, {lot_name, {2}}, {current_path, {3}}};
 		rp = store_updates(paths_update_stmt, paths_update_str_map);
 		if (!rp.first) {
 			std::string int_err = rp.second;
@@ -1832,22 +1837,32 @@ std::pair<std::vector<std::string>, std::string> lotman::Lot::list_all_lots() {
 
 std::pair<std::vector<std::string>, std::string> lotman::Lot::get_lots_from_dir(const std::string &dir_input,
 																				const bool recursive) {
-	std::string dir = dir_input;
-	if (dir.back() == '/') { // Remove the character
-		if (dir.length() > 1) {
-			dir.pop_back();
-		}
+	// Normalize: ensure input dir has trailing slash for consistent comparison
+	// Database paths always have trailing slashes (e.g., "/foo/bar/")
+	std::string dir = ensure_trailing_slash(dir_input);
+
+	// For the LIKE comparison, we need the input path without trailing slash.
+	// This is because: stored path "/foo/" with LIKE pattern means we check if
+	// the input starts with "/foo/". Using "/foo/bar" LIKE "/foo/" || '%' works,
+	// but "/foobar" LIKE "/foo/" || '%' correctly fails (no match).
+	std::string dir_for_like = dir;
+	if (dir_for_like.length() > 1 && dir_for_like.back() == '/') {
+		dir_for_like.pop_back();
 	}
 
+	// Query logic:
+	// - path = ?1 : exact match (normalized input matches stored path exactly)
+	// - ?2 LIKE path || '%' : input is a subdirectory of a stored recursive path
+	//   The trailing slash in stored paths prevents false prefix matches
+	// - ?3 is used for non-recursive path exact matching
 	std::string lots_from_dir_query =
 		"SELECT lot_name FROM paths "
 		"WHERE "
-		"(path = ? OR ? LIKE path || '/%') " // The incoming file path is either the stored file path or a subdirectory
-											 // of it
+		"(path = ? OR ? LIKE path || '%') " // Exact match or subdirectory of stored path
 		"AND "
 		"(recursive OR path = ?) " // If the stored file path is not recursive, we only match the exact file path
 		"ORDER BY LENGTH(path) DESC LIMIT 1;"; // We prefer longer matches over shorter ones
-	std::map<std::string, std::vector<int>> dir_str_map{{dir, {1, 2, 3}}};
+	std::map<std::string, std::vector<int>> dir_str_map{{dir, {1, 3}}, {dir_for_like, {2}}};
 	auto rp = lotman::db::SQL_get_matches(lots_from_dir_query, dir_str_map);
 	if (!rp.second.empty()) {
 		std::string int_err = rp.second;

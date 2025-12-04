@@ -6,6 +6,26 @@
 
 namespace lotman {
 
+/**
+ * Ensures that a path has a trailing slash.
+ * This is used to normalize all paths stored in the database, preventing
+ * string matching bugs where paths like "/foo" and "/foobar" could be
+ * incorrectly matched.
+ *
+ * @param path The input path (should be non-empty in normal usage)
+ * @return The path with a trailing slash appended if not already present.
+ *         Empty paths return "/" as a sensible default.
+ */
+inline std::string ensure_trailing_slash(const std::string &path) {
+	if (path.empty()) {
+		return "/";
+	}
+	if (path.back() != '/') {
+		return path + "/";
+	}
+	return path;
+}
+
 class Checks;
 class Context;
 /**
@@ -285,11 +305,15 @@ class DirUsageUpdate : public Lot {
 			}
 
 			json lot_dirs_json = rp_json_str.first;
-			bool recursive;
-			if (lot_dirs_json.contains(m_current_path)) {
-				recursive = lot_dirs_json[m_current_path]["recursive"].get<bool>();
-			} else {
-				recursive = false;
+			bool recursive = false;
+			// Normalize path with trailing slash to match stored format
+			std::string normalized_current_path = ensure_trailing_slash(m_current_path);
+			// lot_dirs_json is an array of path objects, search for matching path
+			for (const auto &path_obj : lot_dirs_json) {
+				if (path_obj["path"].get<std::string>() == normalized_current_path) {
+					recursive = path_obj["recursive"].get<bool>();
+					break;
+				}
 			}
 
 			// If the dir includes values from subdirs and it is not recursive, we need to subtract subdir usage per
