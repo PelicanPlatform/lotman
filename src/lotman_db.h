@@ -107,6 +107,16 @@ struct LotUsage {
 };
 
 /**
+ * Tracks the database schema version for migration support.
+ * There is always exactly one row in the schema_versions table with id=1.
+ * The 'version' field indicates the current schema version of the database.
+ */
+struct SchemaVersion {
+	int id;		 // Always 1 (single-row table)
+	int version; // Current schema version number
+};
+
+/**
  * Creates the sqlite_orm storage definition.
  * This defines the schema mapping between C++ structs and SQLite tables.
  */
@@ -115,6 +125,8 @@ inline auto create_storage(const std::string &db_path) {
 
 	return sqlite_orm::make_storage(
 		db_path,
+		make_table("schema_versions", make_column("id", &SchemaVersion::id, primary_key()),
+				   make_column("version", &SchemaVersion::version)),
 		make_table("owners", make_column("lot_name", &Owner::lot_name, primary_key()),
 				   make_column("owner", &Owner::owner)),
 		make_table("parents", make_column("lot_name", &Parent::lot_name), make_column("parent", &Parent::parent),

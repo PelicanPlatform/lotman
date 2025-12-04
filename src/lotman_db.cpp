@@ -36,6 +36,52 @@ size_t ConnectionPool::m_max_size = 5;
 std::unordered_map<sqlite3 *, std::unordered_map<std::string, sqlite3_stmt *>> PreparedStatementCache::m_cache;
 std::mutex PreparedStatementCache::m_mutex;
 
+// Current target database schema version. Increment this when adding new migrations.
+static constexpr int TARGET_DB_VERSION = 1;
+
+/**
+ * Perform explicit schema migrations between database versions.
+ *
+ * This function handles upgrading the database schema from one version to the next.
+ * Each migration case should use explicit ALTER TABLE statements where possible,
+ * as they are guaranteed to preserve existing data.
+ *
+ * IMPORTANT: Avoid using sync_schema() in migrations as it may drop and recreate
+ * tables, causing data loss. Use raw SQL ALTER TABLE statements instead.
+ *
+ * @param storage Reference to the ORM storage
+ * @param current_version The current database schema version
+ * @param target_version The target database schema version
+ * @throws std::runtime_error if migration fails or is not defined
+ */
+void migrate_db(Storage &storage, int current_version, int target_version) {
+	// Suppress unused parameter warning when no migrations are defined yet
+	static_cast<void>(storage);
+
+	for (int v = current_version + 1; v <= target_version; ++v) {
+		switch (v) {
+			/*
+			case 2:
+				// Example migration - use explicit ALTER TABLE for safety:
+				// storage.execute("ALTER TABLE owners ADD COLUMN new_col TEXT DEFAULT ''");
+				//
+				// NOTE: SQLite ALTER TABLE only supports:
+				// - ADD COLUMN (column must have DEFAULT or be nullable)
+				// - RENAME TABLE
+				// - RENAME COLUMN (SQLite 3.25+)
+				// - DROP COLUMN (SQLite 3.35+)
+				//
+				// For more complex changes that SQLite doesn't support directly,
+				// you must use the backup-copy-drop-rename pattern manually,
+				// ensuring data is preserved.
+				break;
+			*/
+			default:
+				throw std::runtime_error("No migration defined for version " + std::to_string(v));
+		}
+	}
+}
+
 std::pair<bool, std::string> StorageManager::get_db_path() {
 	const char *lot_env_dir = getenv("LOT_HOME");
 
@@ -96,8 +142,105 @@ Storage &StorageManager::get_storage() {
 		// Set busy timeout
 		m_storage->busy_timeout(*lotman_db_timeout);
 
-		// Create tables if they don't exist
-		m_storage->sync_schema();
+		// Check for existing database state before syncing schema
+		bool schema_versions_exists = false;
+		bool owners_exists = false;
+
+		try {
+			m_storage->count<SchemaVersion>();
+			schema_versions_exists = true;
+		} catch (const std::system_error &) {
+			// Table does not exist - this is expected for fresh or legacy databases
+			schema_versions_exists = false;
+		}
+
+		// If there's no schema_versions table, check for owners table to detect databases
+		// that exist but predate schema_versions
+		if (!schema_versions_exists) {
+			try {
+				m_storage->count<Owner>();
+				owners_exists = true;
+			} catch (const std::system_error &) {
+				// Table does not exist - this is a fresh database
+				owners_exists = false;
+			}
+		}
+
+		// Determine whether this is a fresh database or existing one
+		bool is_fresh_db = !schema_versions_exists && !owners_exists;
+
+		if (is_fresh_db) {
+			// Fresh database: safe to use sync_schema() to create all tables
+			m_storage->sync_schema();
+		} else {
+			// Existing database: use sync_schema_simulate() to check what would happen
+			// before making any changes. This protects against accidental data loss.
+			auto simulation = m_storage->sync_schema_simulate(true); // true = preserve mode
+
+			// Check if any table would be dropped and recreated (data loss!)
+			for (const auto &table_result : simulation) {
+				if (table_result.second == sqlite_orm::sync_schema_result::dropped_and_recreated) {
+					throw std::runtime_error(
+						"Database schema mismatch detected for table '" + table_result.first +
+						"'. The required schema change would cause data loss. "
+						"This may indicate database corruption or an incompatible schema change. "
+						"Please backup your database and contact support, or delete the database to start fresh.");
+				}
+			}
+
+			// Safe to proceed - use preserve mode to be extra careful
+			m_storage->sync_schema(true);
+		}
+
+		// Initialize or migrate database version
+		int current_version = 0;
+
+		if (schema_versions_exists) {
+			auto version_ptr = m_storage->get_pointer<SchemaVersion>(1);
+			if (version_ptr) {
+				current_version = version_ptr->version;
+			} else {
+				// Table existed but no row with id=1. Should not happen if we manage it correctly.
+				// Need to check for owners table here since we skipped that check earlier
+				// (owners_exists was only populated when schema_versions_exists was false)
+				bool has_owners = false;
+				try {
+					m_storage->count<Owner>();
+					has_owners = true;
+				} catch (const std::system_error &) {
+					has_owners = false;
+				}
+
+				if (has_owners)
+					current_version = 1;
+				else
+					current_version = TARGET_DB_VERSION;
+
+				m_storage->replace(SchemaVersion{1, current_version});
+			}
+		} else {
+			// schema_versions table did not exist.
+			if (owners_exists) {
+				// Existing v1 database
+				current_version = 1;
+				m_storage->replace(SchemaVersion{1, current_version});
+			} else {
+				// Fresh database
+				current_version = TARGET_DB_VERSION;
+				m_storage->replace(SchemaVersion{1, current_version});
+			}
+		}
+
+		if (current_version > TARGET_DB_VERSION) {
+			throw std::runtime_error("Database schema version (" + std::to_string(current_version) +
+									 ") is newer than supported version (" + std::to_string(TARGET_DB_VERSION) +
+									 "). Cannot downgrade. Please use a newer version of the application.");
+		}
+
+		if (current_version < TARGET_DB_VERSION) {
+			migrate_db(*m_storage, current_version, TARGET_DB_VERSION);
+			m_storage->replace(SchemaVersion{1, TARGET_DB_VERSION});
+		}
 
 		m_initialized = true;
 	}
