@@ -1483,16 +1483,19 @@ TEST_F(LotManTest, GetLotJSONTest) {
 		],
 		"paths": [
 			{
+				"exclude": false,
 				"lot_name": "lot3",
 				"path": "/another/path/",
 				"recursive": true
 			},
 			{
+				"exclude": false,
 				"lot_name": "lot3",
 				"path": "/updated/path/",
 				"recursive": false
 			},
 			{
+				"exclude": false,
 				"lot_name": "lot3",
 				"path": "/foo/barr/",
 				"recursive": true
@@ -1541,36 +1544,43 @@ TEST_F(LotManTest, GetLotJSONTest) {
 		],
 		"paths": [
 			{
+				"exclude": false,
 				"lot_name": "lot3",
 				"path": "/another/path/",
 				"recursive": true
 			},
 			{
+				"exclude": false,
 				"lot_name": "lot3",
 				"path": "/updated/path/",
 				"recursive": false
 			},
 			{
+				"exclude": false,
 				"lot_name": "lot3",
 				"path": "/foo/barr/",
 				"recursive": true
 			},
 			{
+				"exclude": false,
 				"lot_name": "lot4",
 				"path": "/1/2/3/4/",
 				"recursive": true
 			},
 			{
+				"exclude": false,
 				"lot_name": "lot4",
 				"path": "/345/",
 				"recursive": true
 			},
 			{
+				"exclude": false,
 				"lot_name": "lot5",
 				"path": "/456/",
 				"recursive": false
 			},
 			{
+				"exclude": false,
 				"lot_name": "lot5",
 				"path": "/567/",
 				"recursive": true
@@ -1964,6 +1974,792 @@ TEST_F(LotManTest, PathTrailingSlashNormalizationTest) {
 	paths_json = json::parse(output.get());
 	ASSERT_EQ(paths_json.size(), 1);
 	EXPECT_EQ(paths_json[0]["path"], "/no/slash/here/");
+}
+
+TEST_F(LotManTest, PathExclusionTest) {
+	// Test for path exclusion feature (GitHub issue #24)
+	// This tests that a lot can have paths explicitly excluded from recursive tracking
+	addDefaultLot();
+	addLot1(); // lot1 is a self-parenting root lot with owner1
+
+	// Create a lot with a recursive path and excluded subdirectories
+	// This tests both recursive and non-recursive exclusions:
+	// - /data/storage/cache is excluded recursively (subdirs also excluded)
+	// - /data/storage/stuff is excluded non-recursively (subdirs are included)
+	const char *lot_with_exclusions = R"({
+		"lot_name": "exclusion_lot",
+		"owner": "owner1",
+		"parents": ["lot1"],
+		"paths": [
+			{"path": "/data/storage", "recursive": true, "exclude": false},
+			{"path": "/data/storage/cache", "recursive": true, "exclude": true},
+			{"path": "/data/storage/stuff", "recursive": false, "exclude": true},
+			{"path": "/data/logs", "recursive": false}
+		],
+		"management_policy_attrs": {
+			"dedicated_GB": 10,
+			"opportunistic_GB": 5,
+			"max_num_objects": 100,
+			"creation_time": 123,
+			"expiration_time": 234,
+			"deletion_time": 345
+		}
+	})";
+
+	char *raw_err = nullptr;
+	int rv = lotman_add_lot(lot_with_exclusions, &raw_err);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed to add lot with exclusions: " << err_msg.get();
+
+	// Test get_lot_dirs returns all paths with exclude flags
+	char *raw_output = nullptr;
+	rv = lotman_get_lot_dirs("exclusion_lot", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	UniqueCString output(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json paths_json = json::parse(output.get());
+	ASSERT_EQ(paths_json.size(), 4);
+
+	// Verify paths and their exclude flags
+	bool found_storage = false, found_cache = false, found_stuff = false, found_logs = false;
+	for (const auto &path_entry : paths_json) {
+		std::string path = path_entry["path"];
+		bool exclude = path_entry["exclude"];
+		if (path == "/data/storage/") {
+			found_storage = true;
+			EXPECT_FALSE(exclude) << "Storage path should not be excluded";
+			EXPECT_TRUE(path_entry["recursive"]);
+		} else if (path == "/data/storage/cache/") {
+			found_cache = true;
+			EXPECT_TRUE(exclude) << "Cache path should be excluded";
+			EXPECT_TRUE(path_entry["recursive"]) << "Cache exclusion should be recursive";
+		} else if (path == "/data/storage/stuff/") {
+			found_stuff = true;
+			EXPECT_TRUE(exclude) << "Stuff path should be excluded";
+			EXPECT_FALSE(path_entry["recursive"]) << "Stuff exclusion should NOT be recursive";
+		} else if (path == "/data/logs/") {
+			found_logs = true;
+			EXPECT_FALSE(exclude) << "Logs path should not be excluded";
+			EXPECT_FALSE(path_entry["recursive"]);
+		}
+	}
+	EXPECT_TRUE(found_storage) << "Expected /data/storage/ path";
+	EXPECT_TRUE(found_cache) << "Expected /data/storage/cache/ path";
+	EXPECT_TRUE(found_stuff) << "Expected /data/storage/stuff/ path";
+	EXPECT_TRUE(found_logs) << "Expected /data/logs/ path";
+
+	// Test get_lots_from_dir: /data/storage should return the lot
+	char **lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/storage", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "exclusion_lot");
+	lotman_free_string_list(lots_output);
+
+	// Test get_lots_from_dir: /data/storage/subdir should return the lot (recursive, not excluded)
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/storage/subdir", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "exclusion_lot");
+	lotman_free_string_list(lots_output);
+
+	// Test get_lots_from_dir: /data/storage/cache itself should NOT return exclusion_lot (excluded)
+	// It should return "default" since the path is excluded from exclusion_lot
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/storage/cache", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "default") << "Cache path should be excluded from exclusion_lot, returning default";
+	lotman_free_string_list(lots_output);
+
+	// Test get_lots_from_dir: /data/storage/cache/subdir should NOT return exclusion_lot (excluded recursively)
+	// It should return "default" since the subdir is under a RECURSIVE exclusion
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/storage/cache/subdir", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "default") << "Cache subdir should be excluded (recursive exclusion)";
+	lotman_free_string_list(lots_output);
+
+	// Test get_lots_from_dir: /data/storage/cache/deep/nested/path should also be excluded (recursive exclusion)
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/storage/cache/deep/nested/path", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "default") << "Deep cache path should be excluded (recursive exclusion)";
+	lotman_free_string_list(lots_output);
+
+	// Test NON-RECURSIVE exclusion: /data/storage/stuff itself should be excluded
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/storage/stuff", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "default") << "Stuff path should be excluded (non-recursive exclusion)";
+	lotman_free_string_list(lots_output);
+
+	// Test NON-RECURSIVE exclusion: /data/storage/stuff/foo should be INCLUDED
+	// Because the exclusion is non-recursive, subdirs fall back to the parent inclusion /data/storage
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/storage/stuff/foo", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "exclusion_lot")
+		<< "Stuff subdir should be INCLUDED (non-recursive exclusion only excludes exact path)";
+	lotman_free_string_list(lots_output);
+
+	// Test NON-RECURSIVE exclusion: /data/storage/stuff/foo/bar/baz should also be INCLUDED
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/storage/stuff/foo/bar/baz", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "exclusion_lot") << "Deep stuff subdir should be INCLUDED";
+	lotman_free_string_list(lots_output);
+
+	// Test that default exclude value works (omitting exclude should default to false)
+	const char *lot_default_exclude = R"({
+		"lot_name": "default_exclude_lot",
+		"owner": "owner1",
+		"parents": ["lot1"],
+		"paths": [
+			{"path": "/test/path", "recursive": true}
+		],
+		"management_policy_attrs": {
+			"dedicated_GB": 5,
+			"opportunistic_GB": 2,
+			"max_num_objects": 50,
+			"creation_time": 123,
+			"expiration_time": 234,
+			"deletion_time": 345
+		}
+	})";
+
+	rv = lotman_add_lot(lot_default_exclude, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed to add lot without explicit exclude: " << err_msg.get();
+
+	raw_output = nullptr;
+	rv = lotman_get_lot_dirs("default_exclude_lot", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json default_paths_json = json::parse(output.get());
+	ASSERT_EQ(default_paths_json.size(), 1);
+	EXPECT_FALSE(default_paths_json[0]["exclude"]) << "Default exclude should be false";
+
+	// Test adding exclusion via lotman_add_to_lot
+	const char *add_exclusion = R"({
+		"lot_name": "default_exclude_lot",
+		"paths": [{"path": "/test/path/excluded", "recursive": true, "exclude": true}]
+	})";
+
+	rv = lotman_add_to_lot(add_exclusion, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed to add excluded path: " << err_msg.get();
+
+	raw_output = nullptr;
+	rv = lotman_get_lot_dirs("default_exclude_lot", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json updated_paths_json = json::parse(output.get());
+	ASSERT_EQ(updated_paths_json.size(), 2);
+
+	// Verify the added exclusion
+	bool found_excluded = false;
+	for (const auto &path_entry : updated_paths_json) {
+		if (path_entry["path"] == "/test/path/excluded/") {
+			found_excluded = true;
+			EXPECT_TRUE(path_entry["exclude"]) << "Added path should be excluded";
+		}
+	}
+	EXPECT_TRUE(found_excluded) << "Should find the added excluded path";
+
+	// Test that /test/path/subdir still returns the lot (not excluded)
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/test/path/subdir", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "default_exclude_lot");
+	lotman_free_string_list(lots_output);
+
+	// Test that /test/path/excluded returns "default" (excluded from default_exclude_lot)
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/test/path/excluded", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "default") << "Excluded path should return default lot";
+	lotman_free_string_list(lots_output);
+
+	// Test removing an excluded path (should succeed without error)
+	const char *remove_exclusion = R"({
+		"paths": ["/test/path/excluded"]
+	})";
+	rv = lotman_rm_paths_from_lots(remove_exclusion, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed to remove excluded path: " << err_msg.get();
+
+	// Verify path was removed
+	raw_output = nullptr;
+	rv = lotman_get_lot_dirs("default_exclude_lot", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json final_paths_json = json::parse(output.get());
+	ASSERT_EQ(final_paths_json.size(), 1);
+	EXPECT_EQ(final_paths_json[0]["path"], "/test/path/");
+
+	// Edge case: Test exclusion path that is a prefix of another valid path
+	// e.g., exclude /data/cache but /data/cachedata should NOT be excluded
+	const char *prefix_lot = R"({
+		"lot_name": "prefix_test_lot",
+		"owner": "owner1",
+		"parents": ["lot1"],
+		"paths": [
+			{"path": "/data", "recursive": true, "exclude": false},
+			{"path": "/data/cache", "recursive": true, "exclude": true}
+		],
+		"management_policy_attrs": {
+			"dedicated_GB": 5,
+			"opportunistic_GB": 2,
+			"max_num_objects": 50,
+			"creation_time": 123,
+			"expiration_time": 234,
+			"deletion_time": 345
+		}
+	})";
+
+	rv = lotman_add_lot(prefix_lot, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed to add prefix test lot: " << err_msg.get();
+
+	// /data/cache should be excluded
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/cache", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	EXPECT_STREQ(lots_output[0], "default") << "/data/cache should be excluded";
+	lotman_free_string_list(lots_output);
+
+	// /data/cachedata should NOT be excluded (different path, just happens to have "cache" prefix)
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/cachedata", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	EXPECT_STREQ(lots_output[0], "prefix_test_lot") << "/data/cachedata should NOT be excluded (different path)";
+	lotman_free_string_list(lots_output);
+
+	// /data/cache/subdir should be excluded (under recursive exclusion)
+	lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/data/cache/subdir", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	EXPECT_STREQ(lots_output[0], "default") << "/data/cache/subdir should be excluded";
+	lotman_free_string_list(lots_output);
+}
+
+TEST_F(LotManTest, PathExclusionUpdateTest) {
+	// Test updating paths to change exclude flag
+	addDefaultLot();
+	addLot1(); // lot1 is a self-parenting root lot with owner1
+
+	// Create a lot with a path
+	const char *lot_json = R"({
+		"lot_name": "update_exclude_lot",
+		"owner": "owner1",
+		"parents": ["lot1"],
+		"paths": [
+			{"path": "/update/test", "recursive": true}
+		],
+		"management_policy_attrs": {
+			"dedicated_GB": 5,
+			"opportunistic_GB": 2,
+			"max_num_objects": 50,
+			"creation_time": 123,
+			"expiration_time": 234,
+			"deletion_time": 345
+		}
+	})";
+
+	char *raw_err = nullptr;
+	int rv = lotman_add_lot(lot_json, &raw_err);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Update the path to be excluded
+	const char *update_json = R"({
+		"lot_name": "update_exclude_lot",
+		"paths": [
+			{"current": "/update/test", "new": "/update/test", "recursive": true, "exclude": true}
+		]
+	})";
+
+	rv = lotman_update_lot(update_json, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed to update path exclusion: " << err_msg.get();
+
+	// Verify the exclude flag was updated
+	char *raw_output = nullptr;
+	rv = lotman_get_lot_dirs("update_exclude_lot", false, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	UniqueCString output(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json paths_json = json::parse(output.get());
+	ASSERT_EQ(paths_json.size(), 1);
+	EXPECT_TRUE(paths_json[0]["exclude"]) << "Path should now be excluded";
+
+	// Verify get_lots_from_dir respects the update - should return "default" now
+	char **lots_output = nullptr;
+	rv = lotman_get_lots_from_dir("/update/test", false, &lots_output, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	ASSERT_NE(lots_output, nullptr);
+	EXPECT_STREQ(lots_output[0], "default") << "Updated excluded path should return default lot";
+	lotman_free_string_list(lots_output);
+}
+
+TEST_F(LotManTest, UpdateUsageByDirWithExclusionsTest) {
+	// This test verifies that lotman_update_lot_usage_by_dir correctly respects
+	// path exclusions when attributing usage to lots.
+	addDefaultLot();
+	addLot1(); // lot1 is a self-parenting root lot with owner1
+
+	// Create a lot with:
+	// - /project included recursively
+	// - /project/cache excluded recursively (cache dirs shouldn't count)
+	// - /project/tmp excluded non-recursively (tmp itself excluded, but tmp/subdir counts)
+	const char *lot_with_exclusions = R"({
+		"lot_name": "project_lot",
+		"owner": "owner1",
+		"parents": ["lot1"],
+		"paths": [
+			{"path": "/project", "recursive": true, "exclude": false},
+			{"path": "/project/cache", "recursive": true, "exclude": true},
+			{"path": "/project/tmp", "recursive": false, "exclude": true}
+		],
+		"management_policy_attrs": {
+			"dedicated_GB": 100,
+			"opportunistic_GB": 50,
+			"max_num_objects": 10000,
+			"creation_time": 123,
+			"expiration_time": 999999999999,
+			"deletion_time": 999999999999
+		}
+	})";
+
+	char *raw_err = nullptr;
+	int rv = lotman_add_lot(lot_with_exclusions, &raw_err);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed to add lot with exclusions: " << err_msg.get();
+
+	// Verify initial usage is zero
+	const char *project_usage_query = R"({
+		"lot_name": "project_lot",
+		"total_GB": false,
+		"num_objects": false
+	})";
+	char *raw_output = nullptr;
+	rv = lotman_get_lot_usage(project_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	UniqueCString output(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	json usage_json = json::parse(output.get());
+	EXPECT_EQ(usage_json["total_GB"]["self_contrib"], 0.0);
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"], 0);
+
+	// Update usage for various directories:
+	// - /project/src (10 GB, 100 objects) -> should go to project_lot
+	// - /project/cache (5 GB, 50 objects) -> should go to DEFAULT (recursive exclusion)
+	// - /project/cache/build (3 GB, 30 objects) -> should go to DEFAULT (under recursive exclusion)
+	// - /project/tmp (2 GB, 20 objects) -> should go to DEFAULT (non-recursive exclusion)
+	// - /project/tmp/work (4 GB, 40 objects) -> should go to project_lot (non-recursive exclusion doesn't cover
+	// subdirs)
+	const char *usage_update = R"([
+		{
+			"path": "/project/src",
+			"size_GB": 10.0,
+			"num_obj": 100,
+			"includes_subdirs": false,
+			"subdirs": []
+		},
+		{
+			"path": "/project/cache",
+			"size_GB": 5.0,
+			"num_obj": 50,
+			"includes_subdirs": false,
+			"subdirs": []
+		},
+		{
+			"path": "/project/cache/build",
+			"size_GB": 3.0,
+			"num_obj": 30,
+			"includes_subdirs": false,
+			"subdirs": []
+		},
+		{
+			"path": "/project/tmp",
+			"size_GB": 2.0,
+			"num_obj": 20,
+			"includes_subdirs": false,
+			"subdirs": []
+		},
+		{
+			"path": "/project/tmp/work",
+			"size_GB": 4.0,
+			"num_obj": 40,
+			"includes_subdirs": false,
+			"subdirs": []
+		}
+	])";
+
+	rv = lotman_update_lot_usage_by_dir(usage_update, false, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed to update usage by dir: " << err_msg.get();
+
+	// Check project_lot usage:
+	// Should have: /project/src (10 GB, 100 obj) + /project/tmp/work (4 GB, 40 obj) = 14 GB, 140 objects
+	raw_output = nullptr;
+	rv = lotman_get_lot_usage(project_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	usage_json = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(usage_json["total_GB"]["self_contrib"].get<double>(), 14.0)
+		<< "project_lot should have 14 GB (src + tmp/work)";
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"].get<int64_t>(), 140)
+		<< "project_lot should have 140 objects (src + tmp/work)";
+
+	// Check default lot usage:
+	// Should have: /project/cache (5 GB, 50 obj) + /project/cache/build (3 GB, 30 obj) + /project/tmp (2 GB, 20 obj)
+	// = 10 GB, 100 objects
+	const char *default_usage_query = R"({
+		"lot_name": "default",
+		"total_GB": false,
+		"num_objects": false
+	})";
+	raw_output = nullptr;
+	rv = lotman_get_lot_usage(default_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	usage_json = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(usage_json["total_GB"]["self_contrib"].get<double>(), 10.0)
+		<< "default should have 10 GB (cache + cache/build + tmp)";
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"].get<int64_t>(), 100)
+		<< "default should have 100 objects (cache + cache/build + tmp)";
+
+	// Test delta mode update: Add more usage to excluded and non-excluded paths
+	const char *delta_update = R"([
+		{
+			"path": "/project/src/new",
+			"size_GB": 1.5,
+			"num_obj": 15,
+			"includes_subdirs": false,
+			"subdirs": []
+		},
+		{
+			"path": "/project/cache/new",
+			"size_GB": 0.5,
+			"num_obj": 5,
+			"includes_subdirs": false,
+			"subdirs": []
+		}
+	])";
+
+	rv = lotman_update_lot_usage_by_dir(delta_update, true, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed delta update: " << err_msg.get();
+
+	// Check project_lot after delta: 14 + 1.5 = 15.5 GB, 140 + 15 = 155 objects
+	raw_output = nullptr;
+	rv = lotman_get_lot_usage(project_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	usage_json = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(usage_json["total_GB"]["self_contrib"].get<double>(), 15.5)
+		<< "project_lot should have 15.5 GB after delta";
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"].get<int64_t>(), 155)
+		<< "project_lot should have 155 objects after delta";
+
+	// Check default after delta: 10 + 0.5 = 10.5 GB, 100 + 5 = 105 objects
+	raw_output = nullptr;
+	rv = lotman_get_lot_usage(default_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	usage_json = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(usage_json["total_GB"]["self_contrib"].get<double>(), 10.5)
+		<< "default should have 10.5 GB after delta";
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"].get<int64_t>(), 105)
+		<< "default should have 105 objects after delta";
+}
+
+TEST_F(LotManTest, UpdateUsageByDirNestedExclusionsTest) {
+	// Test nested directory structure with hierarchical updates
+	// This tests the includes_subdirs=true case with exclusions
+	addDefaultLot();
+	addLot1();
+
+	// Create a lot with a recursive exclusion
+	const char *lot_json = R"({
+		"lot_name": "data_lot",
+		"owner": "owner1",
+		"parents": ["lot1"],
+		"paths": [
+			{"path": "/data", "recursive": true, "exclude": false},
+			{"path": "/data/scratch", "recursive": true, "exclude": true}
+		],
+		"management_policy_attrs": {
+			"dedicated_GB": 100,
+			"opportunistic_GB": 50,
+			"max_num_objects": 10000,
+			"creation_time": 123,
+			"expiration_time": 999999999999,
+			"deletion_time": 999999999999
+		}
+	})";
+
+	char *raw_err = nullptr;
+	int rv = lotman_add_lot(lot_json, &raw_err);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Update with nested structure where parent includes_subdirs=true
+	// /data reports 20 GB total including subdirs
+	// /data/important has 8 GB (not excluded, should go to data_lot)
+	// /data/scratch has 12 GB (excluded, should go to default)
+	//
+	// Since /data is not stored as an exact path match (only /data/ is stored),
+	// when includes_subdirs=true and recursive=false for the matching rule,
+	// it subtracts subdir usage. But /data/ IS recursive, so subdirs are handled recursively.
+	const char *nested_update = R"([
+		{
+			"path": "/data/important",
+			"size_GB": 8.0,
+			"num_obj": 80,
+			"includes_subdirs": false,
+			"subdirs": []
+		},
+		{
+			"path": "/data/scratch",
+			"size_GB": 12.0,
+			"num_obj": 120,
+			"includes_subdirs": true,
+			"subdirs": [
+				{
+					"path": "temp",
+					"size_GB": 5.0,
+					"num_obj": 50,
+					"includes_subdirs": false,
+					"subdirs": []
+				}
+			]
+		}
+	])";
+
+	rv = lotman_update_lot_usage_by_dir(nested_update, false, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed nested update: " << err_msg.get();
+
+	// Check data_lot: should only have /data/important = 8 GB, 80 objects
+	const char *data_usage_query = R"({
+		"lot_name": "data_lot",
+		"total_GB": false,
+		"num_objects": false
+	})";
+	char *raw_output = nullptr;
+	rv = lotman_get_lot_usage(data_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	UniqueCString output(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	json usage_json = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(usage_json["total_GB"]["self_contrib"].get<double>(), 8.0)
+		<< "data_lot should only have usage from /data/important";
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"].get<int64_t>(), 80);
+
+	// Check default lot usage:
+	// /data/scratch is excluded and has includes_subdirs=true with 12 GB total (including 5 GB temp subdir).
+	// Since the default lot has no explicit path for /data/scratch, JSON_math treats it as non-recursive.
+	// With recursive=false and includes_subdirs=true, the function:
+	//   1. Subtracts subdir values: 12 - 5 = 7 GB for /data/scratch itself
+	//   2. Processes /data/scratch/temp separately: 5 GB (also goes to default due to recursive exclusion)
+	// Total default: 7 + 5 = 12 GB
+	const char *default_usage_query = R"({
+		"lot_name": "default",
+		"total_GB": false,
+		"num_objects": false
+	})";
+	raw_output = nullptr;
+	rv = lotman_get_lot_usage(default_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	usage_json = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(usage_json["total_GB"]["self_contrib"].get<double>(), 12.0)
+		<< "default should have all scratch usage (12 GB total from scratch hierarchy)";
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"].get<int64_t>(), 120)
+		<< "default should have 120 objects from scratch hierarchy";
+}
+
+TEST_F(LotManTest, UpdateUsageByDirIncludesSubdirsWithExclusionsTest) {
+	// Test case: Parent directory uses includes_subdirs=true with explicit subdirs,
+	// where some subdirs map to excluded paths. This tests the interaction between
+	// the subdir processing logic and path exclusions.
+	addDefaultLot();
+	addLot1();
+
+	// Create a lot with mixed included/excluded paths
+	// /home/user is included recursively
+	// /home/user/downloads is excluded (non-recursive)
+	// /home/user/cache is excluded (recursive)
+	const char *lot_json = R"({
+		"lot_name": "user_lot",
+		"owner": "owner1",
+		"parents": ["lot1"],
+		"paths": [
+			{"path": "/home/user", "recursive": true, "exclude": false},
+			{"path": "/home/user/downloads", "recursive": false, "exclude": true},
+			{"path": "/home/user/cache", "recursive": true, "exclude": true}
+		],
+		"management_policy_attrs": {
+			"dedicated_GB": 100,
+			"opportunistic_GB": 50,
+			"max_num_objects": 10000,
+			"creation_time": 123,
+			"expiration_time": 999999999999,
+			"deletion_time": 999999999999
+		}
+	})";
+
+	char *raw_err = nullptr;
+	int rv = lotman_add_lot(lot_json, &raw_err);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	// Update /home/user with includes_subdirs=true and explicit subdirs.
+	// Total reported: 50 GB with subdirs: documents(20), downloads(10), cache(8), .config(4)
+	//
+	// Since /home/user is recursive, excluded subdirs are detected and processed separately:
+	//   - /home/user direct: 50 - 20 - 10 - 8 - 4 = 8 GB -> user_lot
+	//   - documents: 20 GB -> user_lot (not excluded)
+	//   - downloads: 10 - 3 = 7 GB -> default (excluded non-recursive)
+	//   - downloads/archive: 3 GB -> user_lot (parent exclusion is non-recursive)
+	//   - cache: 8 - 5 = 3 GB -> default (excluded recursive)
+	//   - cache/temp: 5 GB -> default (under recursive exclusion)
+	//   - .config: 4 GB -> user_lot (not excluded)
+	//
+	// Expected totals:
+	//   user_lot: 8 + 20 + 3 + 4 = 35 GB, 350 objects
+	//   default: 7 + 3 + 5 = 15 GB, 150 objects
+
+	const char *usage_update = R"([
+		{
+			"path": "/home/user",
+			"size_GB": 50.0,
+			"num_obj": 500,
+			"includes_subdirs": true,
+			"subdirs": [
+				{
+					"path": "documents",
+					"size_GB": 20.0,
+					"num_obj": 200,
+					"includes_subdirs": false,
+					"subdirs": []
+				},
+				{
+					"path": "downloads",
+					"size_GB": 10.0,
+					"num_obj": 100,
+					"includes_subdirs": true,
+					"subdirs": [
+						{
+							"path": "archive",
+							"size_GB": 3.0,
+							"num_obj": 30,
+							"includes_subdirs": false,
+							"subdirs": []
+						}
+					]
+				},
+				{
+					"path": "cache",
+					"size_GB": 8.0,
+					"num_obj": 80,
+					"includes_subdirs": true,
+					"subdirs": [
+						{
+							"path": "temp",
+							"size_GB": 5.0,
+							"num_obj": 50,
+							"includes_subdirs": false,
+							"subdirs": []
+						}
+					]
+				},
+				{
+					"path": ".config",
+					"size_GB": 4.0,
+					"num_obj": 40,
+					"includes_subdirs": false,
+					"subdirs": []
+				}
+			]
+		}
+	])";
+
+	rv = lotman_update_lot_usage_by_dir(usage_update, false, &raw_err);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << "Failed usage update: " << err_msg.get();
+
+	// Verify user_lot: 8 (direct) + 20 (documents) + 3 (downloads/archive) + 4 (.config) = 35 GB
+	const char *user_usage_query = R"({
+		"lot_name": "user_lot",
+		"total_GB": false,
+		"num_objects": false
+	})";
+	char *raw_output = nullptr;
+	rv = lotman_get_lot_usage(user_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	UniqueCString output(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	json usage_json = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(usage_json["total_GB"]["self_contrib"].get<double>(), 35.0)
+		<< "user_lot should have 35 GB: 8 (direct) + 20 (documents) + 3 (downloads/archive) + 4 (.config)";
+	// Objects: 500 - 200 - 100 - 80 - 40 = 80 (direct) + 200 + 30 + 40 = 350
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"].get<int64_t>(), 350) << "user_lot should have 350 objects";
+
+	// Verify default lot: 7 (downloads) + 3 (cache) + 5 (cache/temp) = 15 GB
+	const char *default_usage_query = R"({
+		"lot_name": "default",
+		"total_GB": false,
+		"num_objects": false
+	})";
+	raw_output = nullptr;
+	rv = lotman_get_lot_usage(default_usage_query, &raw_output, &raw_err);
+	err_msg.reset(raw_err);
+	output.reset(raw_output);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+	usage_json = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(usage_json["total_GB"]["self_contrib"].get<double>(), 15.0)
+		<< "default should have 15 GB: 7 (downloads) + 3 (cache) + 5 (cache/temp)";
+	// Objects: (100 - 30) + (80 - 50) + 50 = 70 + 30 + 50 = 150
+	EXPECT_EQ(usage_json["num_objects"]["self_contrib"].get<int64_t>(), 150) << "default should have 150 objects";
 }
 } // namespace
 

@@ -68,9 +68,12 @@ int lotman_add_lot(const char *lotman_JSON_str, char **err_msg);
 	"paths":
 		OPTIONAL: An array of `path` objects that are used to associate paths/objects to the lot. Each
 		path object has the following structure:
-		{"path": "/path/to/associate", "recursive": bool}
+		{"path": "/path/to/associate", "recursive": bool, "exclude": bool}
 		When "recursive" is true, all subdirectories of the path are also attributed to the lot. When false,
 		only non-directory objects below the path should be attributed, but any subdirectories should not be.
+		When "exclude" is true, this path is excluded from the lot's tracking. This allows for patterns like
+		"track everything under /foo recursively, except /foo/bar". The "exclude" field is optional and
+		defaults to false if not specified.
 	"management_policy_attrs":
 		REQUIRED: A JSON object containing the collection of attributes used for creating policies for the
 		lot. The object has the following structure:
@@ -194,7 +197,8 @@ int lotman_update_lot(const char *lotman_JSON_str, char **err_msg);
 		{"current": "current_parent", "new": "new_parent"}
 	"paths":
 		OPTIONAL: An array of path update objects, where each path update object takes the following form:
-		{"current": "/foo", "new": "/bar", "recursive": true}
+		{"current": "/foo", "new": "/bar", "recursive": true, "exclude": false}
+		The "exclude" field is optional. If provided, it updates whether the path is an exclusion.
 	"management_policy_attrs":
 		OPTIONAL: An object that defines how each/any attribute from the Management Policy Attributes should
 		be updated, taking the following form:
@@ -282,7 +286,9 @@ int lotman_add_to_lot(const char *additions_JSON_str, char **err_msg);
 		REQUIRED: A string indicating the name of the lot.
 	"paths":
 		OPTIONAL: An array of path objects with the following form:
-		{"path": "/new/path", "recursive": true}
+		{"path": "/new/path", "recursive": true, "exclude": false}
+		The "exclude" field is optional and defaults to false. When true, this path is excluded
+		from the lot's tracking rather than included.
 	"parents":
 		OPTIONAL: An array of strings indicating the new parents to be added to the lot. These
 		parents must be existing, valid lot names.
@@ -821,11 +827,13 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
 	"children":
 		An array of strings indicating the lot's children.
 	"paths":
-		An array of JSON objects encoding information about each path associated with the lot. When recursive is
-		true, the object will have the following format:
-		{"/a/path": {"lot_name": <name of lot that tracks the path>, "recursive": <bool indicating whether path is
-recursive>}} If recursive is false, the object will omit the "lot_name", as it is assumed to be from the supplied input
-lot. "management_policy_attrs": A JSON object containing information about the lot's MPAs, as determined by accounting
+		An array of JSON objects encoding information about each path associated with the lot, including
+		both included and excluded paths. Each path object has the following format:
+		{"path": "/a/path/", "lot_name": <name of lot>, "recursive": <bool>, "exclude": <bool>}
+		When "exclude" is true, this path is excluded from the lot's tracking. If recursive is false in the
+		API call, the "lot_name" field is omitted as it is assumed to be the supplied input lot.
+	"management_policy_attrs":
+		A JSON object containing information about the lot's MPAs, as determined by accounting
 for the 'recursive' flag. When recursive is true, each MPA will contain a JSON object with the following format:
 		{"lot_name": "<name of restricting lot>", "value": <restricting value>}
 	"usage":

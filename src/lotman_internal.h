@@ -290,6 +290,9 @@ class DirUsageUpdate : public Lot {
 				std::string ext_err = "Failure on call to get_lots_from_dir: ";
 				return std::make_pair(false, ext_err + int_err);
 			}
+			if (rp_vec_str.first.empty()) {
+				return std::make_pair(false, "get_lots_from_dir returned empty result");
+			}
 
 			Lot lot(rp_vec_str.first[0]);
 			lot.init_self_usage();
@@ -316,26 +319,71 @@ class DirUsageUpdate : public Lot {
 				}
 			}
 
-			// If the dir includes values from subdirs and it is not recursive, we need to subtract subdir usage per
-			// attribute
-			if (update["includes_subdirs"].get<bool>() && !recursive) {
-				for (const auto &subdir : update["subdirs"]) {
+			// Handle subdirs when includes_subdirs is true.
+			// We need to process subdirs in two cases:
+			// 1. The lot's path is not recursive - standard behavior, process each subdir
+			// 2. The lot's path IS recursive BUT some subdirs might be excluded - we need to
+			//    check each subdir and attribute excluded subdirs to their proper lot
+			//
+			// To handle case 2, we check if any subdir maps to a different lot than the parent.
+			// If so, we subtract that subdir's usage from the parent and process it separately.
+			if (update["includes_subdirs"].get<bool>() && !update["subdirs"].empty()) {
+				// Helper to subtract subdir values from parent totals
+				auto subtract_subdir_values = [&](const json &subdir) {
 					if (subdir.contains("size_GB")) {
 						usage_GB -= subdir["size_GB"].get<double>();
 					}
 					if (subdir.contains("num_obj")) {
 						num_obj -= subdir["num_obj"].get<int64_t>();
 					}
-
 					if (subdir.contains("GB_being_written")) {
 						GB_being_written -= subdir["GB_being_written"].get<double>();
 					}
 					if (subdir.contains("objects_being_written")) {
 						objects_being_written -= subdir["objects_being_written"].get<int64_t>();
 					}
+				};
+
+				// Separate subdirs into those belonging to other lots (due to exclusions)
+				json other_lot_subdirs = json::array();
+
+				for (const auto &subdir : update["subdirs"]) {
+					std::string subdir_path;
+					if (subdir["path"].get<std::string>().substr(0, 1) != "/") {
+						subdir_path = m_current_path + "/" + subdir["path"].get<std::string>();
+					} else {
+						subdir_path = m_current_path + subdir["path"].get<std::string>();
+					}
+
+					auto subdir_lot_rp = get_lots_from_dir(subdir_path, false);
+					if (subdir_lot_rp.second.empty() && !subdir_lot_rp.first.empty() &&
+						subdir_lot_rp.first[0] != lot.lot_name) {
+						// Subdir belongs to a different lot (e.g., due to exclusion)
+						other_lot_subdirs.push_back(subdir);
+					}
+					// If we can't determine the lot or it's the same lot, no special handling needed
 				}
-				DirUsageUpdate dirUpdate(m_depth + 1, m_current_path);
-				dirUpdate.JSON_math(update["subdirs"], return_lots);
+
+				// For non-recursive paths, always subtract ALL subdirs and process them
+				// For recursive paths, only subtract subdirs that belong to OTHER lots
+				if (!recursive) {
+					// Non-recursive: subtract all subdirs from parent, process all subdirs
+					for (const auto &subdir : update["subdirs"]) {
+						subtract_subdir_values(subdir);
+					}
+					DirUsageUpdate dirUpdate(m_depth + 1, m_current_path);
+					dirUpdate.JSON_math(update["subdirs"], return_lots);
+				} else if (!other_lot_subdirs.empty()) {
+					// Recursive path but some subdirs are excluded - subtract only those
+					for (const auto &subdir : other_lot_subdirs) {
+						subtract_subdir_values(subdir);
+					}
+					// Process only the subdirs that belong to other lots
+					DirUsageUpdate dirUpdate(m_depth + 1, m_current_path);
+					dirUpdate.JSON_math(other_lot_subdirs, return_lots);
+				}
+				// If recursive and all subdirs belong to same lot, do nothing extra -
+				// the full usage_GB already includes them correctly
 			}
 
 			std::vector<std::string> lot_update_keys;

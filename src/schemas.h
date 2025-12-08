@@ -51,6 +51,10 @@ json new_lot_schema = R"(
                     },
                     "recursive": {
                         "type": "boolean"
+                    },
+                    "exclude": {
+                        "type": "boolean",
+                        "description": "If true, this path is excluded from the lot's tracking"
                     }
                 },
                 "required": ["path", "recursive"]
@@ -163,6 +167,10 @@ json lot_update_schema = R"(
                     },
                     "recursive": {
                         "description": "whether new path is recursive",
+                        "type": "boolean"
+                    },
+                    "exclude": {
+                        "description": "whether new path is an exclusion",
                         "type": "boolean"
                     }
                 },
@@ -283,6 +291,10 @@ json lot_additions_schema = R"(
                     },
                     "recursive": {
                         "type": "boolean"
+                    },
+                    "exclude": {
+                        "type": "boolean",
+                        "description": "If true, this path is excluded from the lot's tracking"
                     }
                 },
                 "required": ["path", "recursive"]

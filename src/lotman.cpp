@@ -1445,6 +1445,12 @@ int lotman_get_lot_as_json(const char *lot_name, const bool recursive, char **ou
 		if (recursive) {
 			output_obj["owners"] = rp_vec_str.first;
 		} else {
+			if (rp_vec_str.first.empty()) {
+				if (err_msg) {
+					*err_msg = strdup("get_owners returned empty result");
+				}
+				return -1;
+			}
 			output_obj["owner"] = rp_vec_str.first[0]; // Only one owner, this is where it will be.
 		}
 

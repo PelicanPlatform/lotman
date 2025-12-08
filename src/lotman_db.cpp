@@ -40,6 +40,22 @@ std::mutex PreparedStatementCache::m_mutex;
 static constexpr int TARGET_DB_VERSION = 1;
 
 /**
+ * Helper function to create a Path record from JSON.
+ * Handles normalization and default values for optional fields.
+ *
+ * @param lot_name The lot name to associate with the path
+ * @param path_json JSON object containing path, recursive, and optionally exclude
+ * @return A db::Path struct ready for database insertion
+ */
+static db::Path create_path_record(const std::string &lot_name, const nlohmann::json &path_json) {
+	std::string normalized_path = ensure_trailing_slash(path_json["path"].get<std::string>());
+	bool recursive = path_json["recursive"].get<bool>();
+	// exclude defaults to false if not specified (schema validates it's boolean if present)
+	bool exclude = path_json.contains("exclude") ? path_json["exclude"].get<bool>() : false;
+	return db::Path{lot_name, normalized_path, static_cast<int>(recursive), static_cast<int>(exclude)};
+}
+
+/**
  * Perform explicit schema migrations between database versions.
  *
  * This function handles upgrading the database schema from one version to the next.
@@ -58,9 +74,13 @@ void migrate_db(Storage &storage, int current_version, int target_version) {
 	for (int v = current_version + 1; v <= target_version; ++v) {
 		switch (v) {
 			case 1: {
-				// Migration v0 -> v1: Ensure all paths in the database have trailing slashes.
-				// This prevents string matching bugs where paths like "/foo" and "/foobar"
-				// could be incorrectly matched.
+				// Migration v0 -> v1:
+				// 1. Ensure all paths in the database have trailing slashes.
+				//    This prevents string matching bugs where paths like "/foo" and "/foobar"
+				//    could be incorrectly matched.
+				// 2. The 'exclude' column is added to the paths table by sync_schema().
+				//    This supports path exclusions where a lot can track /foo recursively
+				//    but exclude /foo/bar from that tracking.
 				//
 				// v0 databases are those created before the schema_versions table existed.
 				// They may have paths stored without trailing slashes.
@@ -70,8 +90,13 @@ void migrate_db(Storage &storage, int current_version, int target_version) {
 				// 1. Uses the ORM consistently with the rest of the codebase
 				// 2. Only runs once per database (on upgrade from v0)
 				// 3. The paths table is typically small enough that this is acceptable
+				//
+				// Note: The 'exclude' column is added automatically by sync_schema() which
+				// is called before migrations. New columns with default values are handled
+				// safely by SQLite's ALTER TABLE ADD COLUMN.
 				using namespace sqlite_orm;
 
+				// Normalize paths with trailing slashes
 				auto all_paths = storage.get_all<Path>();
 				for (auto &path_record : all_paths) {
 					if (!path_record.path.empty() && path_record.path.back() != '/') {
@@ -815,12 +840,9 @@ std::pair<bool, std::string> Lot::write_new() {
 				storage.replace(parent_record);
 			}
 
-			// Insert paths - normalize with trailing slash to prevent prefix matching bugs
-			// (e.g., "/foo" vs "/foobar" confusion)
+			// Insert paths
 			for (const auto &path : paths) {
-				std::string normalized_path = ensure_trailing_slash(path["path"].get<std::string>());
-				db::Path path_record{lot_name, normalized_path, static_cast<int>(path["recursive"].get<bool>())};
-				storage.replace(path_record);
+				storage.replace(db::create_path_record(lot_name, path));
 			}
 
 			// Insert management policy attributes
@@ -955,10 +977,7 @@ std::pair<bool, std::string> Lot::store_new_paths(const std::vector<nlohmann::js
 		// Use transaction for batch insert atomicity
 		storage.transaction([&] {
 			for (const auto &path : new_paths) {
-				// Normalize with trailing slash to prevent prefix matching bugs
-				std::string normalized_path = ensure_trailing_slash(path["path"].get<std::string>());
-				db::Path path_record{lot_name, normalized_path, static_cast<int>(path["recursive"].get<bool>())};
-				storage.replace(path_record);
+				storage.replace(db::create_path_record(lot_name, path));
 			}
 			return true; // Commit
 		});
