@@ -554,6 +554,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_dirs(const bool recursive) {
 			path_obj_internal["lot_name"] = this->lot_name;
 			path_obj_internal["recursive"] = static_cast<bool>(path_rec.recursive);
 			path_obj_internal["path"] = path_rec.path;
+			path_obj_internal["exclude"] = static_cast<bool>(path_rec.exclude);
 			path_arr.push_back(path_obj_internal);
 		}
 
@@ -572,6 +573,7 @@ std::pair<json, std::string> lotman::Lot::get_lot_dirs(const bool recursive) {
 					path_obj_internal["lot_name"] = child.lot_name;
 					path_obj_internal["recursive"] = static_cast<bool>(path_rec.recursive);
 					path_obj_internal["path"] = path_rec.path;
+					path_obj_internal["exclude"] = static_cast<bool>(path_rec.exclude);
 					path_arr.push_back(path_obj_internal);
 				}
 			}
@@ -1042,11 +1044,12 @@ std::pair<bool, std::string> lotman::Lot::update_parents(const json &update_arr)
 }
 
 std::pair<bool, std::string> lotman::Lot::update_paths(const json &update_arr) {
-	// incoming update map looks like {"path1" --> {"path" : "path2", "recursive" : false}}
+	// incoming update map looks like {"path1" --> {"path" : "path2", "recursive" : false, "exclude": false}}
 	std::string paths_update_stmt = "UPDATE paths SET path=? WHERE lot_name=? and path=?;";
 	std::string recursive_update_stmt = "UPDATE paths SET recursive=? WHERE lot_name=? and path=?;";
+	std::string exclude_update_stmt = "UPDATE paths SET exclude=? WHERE lot_name=? and path=?;";
 
-	// Iterate through updates, first perform recursive update THEN path
+	// Iterate through updates, first perform recursive update, then exclude update, THEN path
 	for (const auto &update_obj : update_arr /*update_map*/) {
 		// Normalize paths with trailing slash
 		std::string current_path = ensure_trailing_slash(update_obj["current"].get<std::string>());
@@ -1061,6 +1064,19 @@ std::pair<bool, std::string> lotman::Lot::update_paths(const json &update_arr) {
 			std::string int_err = rp.second;
 			std::string ext_err = "Failure on call to lotman::Lot::store_updates when storing paths recursive update: ";
 			return std::make_pair(false, ext_err + int_err);
+		}
+
+		// Exclude update (if provided)
+		if (update_obj.contains("exclude")) {
+			std::map<int64_t, std::vector<int>> exclude_update_int_map{{update_obj["exclude"].get<int>(), {1}}};
+			std::map<std::string, std::vector<int>> exclude_update_str_map{{lot_name, {2}}, {current_path, {3}}};
+			rp = store_updates(exclude_update_stmt, exclude_update_str_map, exclude_update_int_map);
+			if (!rp.first) {
+				std::string int_err = rp.second;
+				std::string ext_err =
+					"Failure on call to lotman::Lot::store_updates when storing paths exclude update: ";
+				return std::make_pair(false, ext_err + int_err);
+			}
 		}
 
 		// Path update
@@ -1850,18 +1866,41 @@ std::pair<std::vector<std::string>, std::string> lotman::Lot::get_lots_from_dir(
 		dir_for_like.pop_back();
 	}
 
-	// Query logic:
+	// Query logic for path exclusions:
+	// We need to find the best matching path rule for this directory. The algorithm is:
+	// 1. Find all path rules (both inclusions and exclusions) that match this directory
+	// 2. The longest matching path "wins" - if it's an exclusion, the path is not in that lot
+	// 3. If the longest match is an exclusion, we need to find the next longest inclusion
+	//    that is NOT overridden by an exclusion
+	//
+	// The query uses a subquery to check if there's a longer exclusion that would override
+	// any given inclusion match.
+	//
+	// Path matching rules:
 	// - path = ?1 : exact match (normalized input matches stored path exactly)
 	// - ?2 LIKE path || '%' : input is a subdirectory of a stored recursive path
-	//   The trailing slash in stored paths prevents false prefix matches
-	// - ?3 is used for non-recursive path exact matching
+	// - For non-recursive paths, only exact matches count
+	// - exclude = 0 means this is an inclusion (the path IS tracked)
+	// - exclude = 1 means this is an exclusion (the path is NOT tracked by this lot)
+	//
+	// We select the longest non-excluded path that doesn't have a longer exclusion overriding it
 	std::string lots_from_dir_query =
-		"SELECT lot_name FROM paths "
+		"SELECT lot_name FROM paths p "
 		"WHERE "
-		"(path = ? OR ? LIKE path || '%') " // Exact match or subdirectory of stored path
+		"(p.path = ?1 OR ?2 LIKE p.path || '%') " // Exact match or subdirectory of stored path
 		"AND "
-		"(recursive OR path = ?) " // If the stored file path is not recursive, we only match the exact file path
-		"ORDER BY LENGTH(path) DESC LIMIT 1;"; // We prefer longer matches over shorter ones
+		"(p.recursive OR p.path = ?3) " // If not recursive, only match exact path
+		"AND "
+		"p.exclude = 0 "	// Only consider inclusion paths
+		"AND NOT EXISTS ( " // Ensure no longer exclusion overrides this inclusion
+		"    SELECT 1 FROM paths e "
+		"    WHERE e.lot_name = p.lot_name "			  // Same lot
+		"    AND e.exclude = 1 "						  // Is an exclusion
+		"    AND (e.path = ?1 OR ?2 LIKE e.path || '%') " // Matches the input path
+		"    AND (e.recursive OR e.path = ?3) "			  // Respects recursive flag
+		"    AND LENGTH(e.path) > LENGTH(p.path) "		  // Exclusion is more specific (longer)
+		") "
+		"ORDER BY LENGTH(p.path) DESC LIMIT 1;"; // Prefer longest matching inclusion
 	std::map<std::string, std::vector<int>> dir_str_map{{dir, {1, 3}}, {dir_for_like, {2}}};
 	auto rp = lotman::db::SQL_get_matches(lots_from_dir_query, dir_str_map);
 	if (!rp.second.empty()) {

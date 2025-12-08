@@ -82,6 +82,7 @@ struct Path {
 	std::string lot_name;
 	std::string path;
 	int recursive; // SQLite doesn't have native bool, stored as int
+	int exclude;   // If true, this path is excluded from the lot's tracking
 };
 
 struct ManagementPolicyAttributes {
@@ -132,7 +133,8 @@ inline auto create_storage(const std::string &db_path) {
 		make_table("parents", make_column("lot_name", &Parent::lot_name), make_column("parent", &Parent::parent),
 				   primary_key(&Parent::lot_name, &Parent::parent)),
 		make_table("paths", make_column("lot_name", &Path::lot_name), make_column("path", &Path::path, unique()),
-				   make_column("recursive", &Path::recursive)),
+				   make_column("recursive", &Path::recursive),
+				   make_column("exclude", &Path::exclude, default_value(0))),
 		make_table("management_policy_attributes",
 				   make_column("lot_name", &ManagementPolicyAttributes::lot_name, primary_key()),
 				   make_column("dedicated_GB", &ManagementPolicyAttributes::dedicated_GB),
