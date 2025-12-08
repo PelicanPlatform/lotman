@@ -290,6 +290,9 @@ class DirUsageUpdate : public Lot {
 				std::string ext_err = "Failure on call to get_lots_from_dir: ";
 				return std::make_pair(false, ext_err + int_err);
 			}
+			if (rp_vec_str.first.empty()) {
+				return std::make_pair(false, "get_lots_from_dir returned empty result");
+			}
 
 			Lot lot(rp_vec_str.first[0]);
 			lot.init_self_usage();
@@ -353,7 +356,8 @@ class DirUsageUpdate : public Lot {
 					}
 
 					auto subdir_lot_rp = get_lots_from_dir(subdir_path, false);
-					if (subdir_lot_rp.second.empty() && subdir_lot_rp.first[0] != lot.lot_name) {
+					if (subdir_lot_rp.second.empty() && !subdir_lot_rp.first.empty() &&
+						subdir_lot_rp.first[0] != lot.lot_name) {
 						// Subdir belongs to a different lot (e.g., due to exclusion)
 						other_lot_subdirs.push_back(subdir);
 					}

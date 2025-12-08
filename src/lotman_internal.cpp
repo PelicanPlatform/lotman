@@ -524,14 +524,21 @@ std::pair<json, std::string> lotman::Lot::get_restricting_attribute(const std::s
 				}
 
 				std::vector<std::string> compare_value = rp.first;
-				if (std::stod(compare_value[0]) < std::stod(value[0])) {
+				if (!compare_value.empty() && !value.empty() && std::stod(compare_value[0]) < std::stod(value[0])) {
 					value[0] = compare_value[0];
 					restricting_parent_name = parent.lot_name;
 				}
 			}
-			internal_obj["lot_name"] = restricting_parent_name;
-			internal_obj["value"] = std::stod(value[0]);
+			if (!value.empty()) {
+				internal_obj["lot_name"] = restricting_parent_name;
+				internal_obj["value"] = std::stod(value[0]);
+			} else {
+				return std::make_pair(json(), "No valid policy attribute value found");
+			}
 		} else {
+			if (value.empty()) {
+				return std::make_pair(json(), "Policy attribute query returned empty result");
+			}
 			internal_obj["value"] = std::stod(value[0]);
 		}
 		return std::make_pair(internal_obj, "");
@@ -652,6 +659,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_multi_out = rp_multi.first;
+			if (query_multi_out.empty() || query_multi_out[0].size() < 3) {
+				return std::make_pair(json(), "Multi-column query returned insufficient results for dedicated_GB");
+			}
 			output_obj["total"] = std::stod(query_multi_out[0][0]);
 			output_obj["self_contrib"] = std::stod(query_multi_out[0][1]);
 			output_obj["children_contrib"] = std::stod(query_multi_out[0][2]);
@@ -676,6 +686,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_output = rp_single.first;
+			if (query_output.empty()) {
+				return std::make_pair(json(), "Query returned empty result for dedicated_GB");
+			}
 			output_obj["self_contrib"] = std::stod(query_output[0]);
 		}
 	}
@@ -728,6 +741,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_multi_out = rp_multi.first;
+			if (query_multi_out.empty() || query_multi_out[0].size() < 3) {
+				return std::make_pair(json(), "Multi-column query returned insufficient results for opportunistic_GB");
+			}
 			output_obj["total"] = std::stod(query_multi_out[0][0]);
 			output_obj["self_contrib"] = std::stod(query_multi_out[0][1]);
 			output_obj["children_contrib"] = std::stod(query_multi_out[0][2]);
@@ -754,6 +770,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_output = rp_single.first;
+			if (query_output.empty()) {
+				return std::make_pair(json(), "Query returned empty result for opportunistic_GB");
+			}
 			output_obj["self_contrib"] = std::stod(query_output[0]);
 		}
 	}
@@ -771,6 +790,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_multi_out = rp_multi.first;
+			if (query_multi_out.empty() || query_multi_out[0].size() < 2) {
+				return std::make_pair(json(), "Multi-column query returned insufficient results for num_objects");
+			}
 			output_obj["self_contrib"] = std::stod(query_multi_out[0][0]);
 			output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
 			output_obj["total"] = std::stod(query_multi_out[0][0]) + std::stod(query_multi_out[0][1]);
@@ -784,6 +806,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_output = rp_single.first;
+			if (query_output.empty()) {
+				return std::make_pair(json(), "Query returned empty result for num_objects");
+			}
 			output_obj["self_contrib"] = std::stod(query_output[0]);
 		}
 	}
@@ -799,6 +824,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_multi_out = rp_multi.first;
+			if (query_multi_out.empty() || query_multi_out[0].size() < 2) {
+				return std::make_pair(json(), "Multi-column query returned insufficient results for GB_being_written");
+			}
 			output_obj["self_contrib"] = std::stod(query_multi_out[0][0]);
 			output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
 			output_obj["total"] = std::stod(query_multi_out[0][0]) + std::stod(query_multi_out[0][1]);
@@ -813,6 +841,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_output = rp_single.first;
+			if (query_output.empty()) {
+				return std::make_pair(json(), "Query returned empty result for GB_being_written");
+			}
 			output_obj["self_contrib"] = std::stod(query_output[0]);
 		}
 	}
@@ -830,6 +861,10 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_multi_out = rp_multi.first;
+			if (query_multi_out.empty() || query_multi_out[0].size() < 2) {
+				return std::make_pair(json(),
+									  "Multi-column query returned insufficient results for objects_being_written");
+			}
 			output_obj["self_contrib"] = std::stod(query_multi_out[0][0]);
 			output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
 			output_obj["total"] = std::stod(query_multi_out[0][0]) + std::stod(query_multi_out[0][1]);
@@ -844,6 +879,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_output = rp_single.first;
+			if (query_output.empty()) {
+				return std::make_pair(json(), "Query returned empty result for objects_being_written");
+			}
 			output_obj["self_contrib"] = std::stod(query_output[0]);
 		}
 	}
@@ -861,6 +899,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_multi_out = rp_multi.first;
+			if (query_multi_out.empty() || query_multi_out[0].size() < 2) {
+				return std::make_pair(json(), "Multi-column query returned insufficient results for max_num_objects");
+			}
 			output_obj["self_contrib"] = std::stod(query_multi_out[0][0]);
 			output_obj["children_contrib"] = std::stod(query_multi_out[0][1]);
 			output_obj["total"] = std::stod(query_multi_out[0][0]) + std::stod(query_multi_out[0][1]);
@@ -876,6 +917,9 @@ std::pair<json, std::string> lotman::Lot::get_lot_usage(const std::string &key, 
 				return std::make_pair(json(), ext_err + int_err);
 			}
 			query_output = rp_single.first;
+			if (query_output.empty()) {
+				return std::make_pair(json(), "Query returned empty result for max_num_objects");
+			}
 			output_obj["self_contrib"] = std::stod(query_output[0]);
 		}
 	}
