@@ -82,19 +82,20 @@ class LotManTest : public ::testing::Test {
 	}
 
 	// Helper to add default lot - MUST be created before any other lots
+	// Times are chosen to not overlap with test cases (which use times 50-600)
 	void addDefaultLot() {
 		const char *default_lot = R"({
 			"lot_name": "default",
-			"owner": "owner2",
+			"owner": "owner1",
 			"parents": ["default"],
 			"paths": [{"path": "/default/paths", "recursive": true}],
 			"management_policy_attrs": {
 				"dedicated_GB": 5,
 				"opportunistic_GB": 2.5,
 				"max_num_objects": 100,
-				"creation_time": 123,
-				"expiration_time": 234,
-				"deletion_time": 345
+				"creation_time": 1000,
+				"expiration_time": 2000,
+				"deletion_time": 3000
 			}
 		})";
 		addLot(default_lot);
@@ -1965,6 +1966,510 @@ TEST_F(LotManTest, PathTrailingSlashNormalizationTest) {
 	ASSERT_EQ(paths_json.size(), 1);
 	EXPECT_EQ(paths_json[0]["path"], "/no/slash/here/");
 }
+
+// Test: get_max_mpas_for_period - Single lot within period
+TEST_F(LotManTest, MaxMPAsForPeriod_SingleLot) {
+	addDefaultLot();
+
+	const char *lot = R"({
+		"lot_name": "testlot1",
+		"owner": "owner1",
+		"parents": ["testlot1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 10.0,
+			"opportunistic_GB": 5.0,
+			"max_num_objects": 1000,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+	addLot(lot);
+
+	// Query period that contains the lot
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(50, 250, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+	EXPECT_EQ(result["start_ms"], 50);
+	EXPECT_EQ(result["end_ms"], 250);
+	EXPECT_EQ(result["include_deletion"], false);
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 10.0);
+	EXPECT_DOUBLE_EQ(result["max_opportunistic_GB"], 5.0);
+	EXPECT_DOUBLE_EQ(result["max_combined_GB"], 15.0);
+	EXPECT_EQ(result["max_num_objects"], 1000);
+}
+
+// Test: Multiple overlapping lots
+TEST_F(LotManTest, MaxMPAsForPeriod_MultipleOverlapping) {
+	addDefaultLot();
+
+	// Three lots that overlap during [150, 220]
+	// Note that default lot does NOT overlap in time with this period.
+	const char *testlot1 = R"({
+		"lot_name": "testlot1",
+		"owner": "owner1",
+		"parents": ["testlot1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 10.0,
+			"opportunistic_GB": 5.0,
+			"max_num_objects": 1000,
+			"creation_time": 100,
+			"expiration_time": 250,
+			"deletion_time": 300
+		}
+	})";
+
+	const char *testlot2 = R"({
+		"lot_name": "testlot2",
+		"owner": "owner1",
+		"parents": ["testlot2"],
+		"management_policy_attrs": {
+			"dedicated_GB": 8.0,
+			"opportunistic_GB": 3.0,
+			"max_num_objects": 500,
+			"creation_time": 120,
+			"expiration_time": 230,
+			"deletion_time": 280
+		}
+	})";
+
+	const char *testlot3 = R"({
+		"lot_name": "testlot3",
+		"owner": "owner1",
+		"parents": ["testlot3"],
+		"management_policy_attrs": {
+			"dedicated_GB": 7.0,
+			"opportunistic_GB": 2.0,
+			"max_num_objects": 300,
+			"creation_time": 150,
+			"expiration_time": 220,
+			"deletion_time": 270
+		}
+	})";
+
+	addLot(testlot1);
+	addLot(testlot2);
+	addLot(testlot3);
+
+	// Query period where all three overlap
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(100, 300, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 25.0);		// 10 + 8 + 7
+	EXPECT_DOUBLE_EQ(result["max_opportunistic_GB"], 10.0); // 5 + 3 + 2
+	EXPECT_DOUBLE_EQ(result["max_combined_GB"], 35.0);		// 25 + 10
+	EXPECT_EQ(result["max_num_objects"], 1800);				// 1000 + 500 + 300
+}
+
+// Test: Multiple lots where max cumulative values and dedicated values occur at
+// different times from different lots
+TEST_F(LotManTest, MaxMPAsForPeriod_DifferentMaximums) {
+	addDefaultLot();
+
+	// Three lots with high dedicated, low opportunistic, overlapping early
+	const char *testlot1 = R"({
+		"lot_name": "testlot1",
+		"owner": "owner1",
+		"parents": ["testlot1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 10.0,
+			"opportunistic_GB": 0.0,
+			"max_num_objects": 1000,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 250
+		}
+	})";
+
+	const char *testlot2 = R"({
+		"lot_name": "testlot2",
+		"owner": "owner1",
+		"parents": ["testlot2"],
+		"management_policy_attrs": {
+			"dedicated_GB": 8.0,
+			"opportunistic_GB": 0.0,
+			"max_num_objects": 500,
+			"creation_time": 120,
+			"expiration_time": 220,
+			"deletion_time": 270
+		}
+	})";
+
+	const char *testlot3 = R"({
+		"lot_name": "testlot3",
+		"owner": "owner1",
+		"parents": ["testlot3"],
+		"management_policy_attrs": {
+			"dedicated_GB": 7.0,
+			"opportunistic_GB": 0.0,
+			"max_num_objects": 300,
+			"creation_time": 130,
+			"expiration_time": 210,
+			"deletion_time": 260
+		}
+	})";
+
+	// One lot with low dedicated, high opportunistic, later in timeline
+	const char *testlot4 = R"({
+		"lot_name": "testlot4",
+		"owner": "owner1",
+		"parents": ["testlot4"],
+		"management_policy_attrs": {
+			"dedicated_GB": 2.0,
+			"opportunistic_GB": 30.0,
+			"max_num_objects": 100,
+			"creation_time": 300,
+			"expiration_time": 400,
+			"deletion_time": 450
+		}
+	})";
+
+	addLot(testlot1);
+	addLot(testlot2);
+	addLot(testlot3);
+	addLot(testlot4);
+
+	// Query entire period
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(100, 500, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+	// max_dedicated occurs when testlot1+testlot2+testlot3 overlap (130-200)
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 25.0); // 10 + 8 + 7
+	// max_opportunistic occurs when only testlot4 is active (300-400)
+	EXPECT_DOUBLE_EQ(result["max_opportunistic_GB"], 30.0); // just testlot4
+	// max_combined is testlot4's total since 32 > 25
+	EXPECT_DOUBLE_EQ(result["max_combined_GB"], 32.0); // 2 + 30 from testlot4
+	// max_objects occurs when testlot1+testlot2+testlot3 overlap
+	EXPECT_EQ(result["max_num_objects"], 1800); // 1000 + 500 + 300
+}
+
+// Test: Lots spanning beyond query range
+TEST_F(LotManTest, MaxMPAsForPeriod_LotsSpanBeyondRange) {
+	addDefaultLot();
+
+	const char *lot = R"({
+		"lot_name": "testlot1",
+		"owner": "owner1",
+		"parents": ["testlot1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 10.0,
+			"opportunistic_GB": 5.0,
+			"max_num_objects": 1000,
+			"creation_time": 50,
+			"expiration_time": 500,
+			"deletion_time": 600
+		}
+	})";
+	addLot(lot);
+
+	// Query a window within the lot's lifetime
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(100, 200, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+	// Lot extends throughout the entire query period
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 10.0);
+	EXPECT_DOUBLE_EQ(result["max_opportunistic_GB"], 5.0);
+	EXPECT_DOUBLE_EQ(result["max_combined_GB"], 15.0);
+	EXPECT_EQ(result["max_num_objects"], 1000);
+}
+
+// Test: include_deletion parameter (expiration vs deletion)
+TEST_F(LotManTest, MaxMPAsForPeriod_IncludeDeletion) {
+	addDefaultLot();
+
+	const char *lot = R"({
+		"lot_name": "testlot1",
+		"owner": "owner1",
+		"parents": ["testlot1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 10.0,
+			"opportunistic_GB": 5.0,
+			"max_num_objects": 1000,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+	addLot(lot);
+
+	// Query with include_deletion=false (uses expiration_time=200)
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(100, 250, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 10.0);
+
+	// Query with include_deletion=true (uses deletion_time=300)
+	raw_output = nullptr;
+	raw_err = nullptr;
+	rv = lotman_get_max_mpas_for_period(200, 250, true, &raw_output, &raw_err);
+	output.reset(raw_output);
+	err_msg.reset(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	result = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 10.0); // Still active with deletion endpoint
+	EXPECT_EQ(result["include_deletion"], true);
+}
+
+// Test: Error case - start_ms >= end_ms
+TEST_F(LotManTest, MaxMPAsForPeriod_InvalidTimeRange) {
+	addDefaultLot();
+
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+
+	// start_ms == end_ms should error
+	int rv = lotman_get_max_mpas_for_period(100, 100, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	EXPECT_NE(rv, 0);
+	EXPECT_NE(err_msg.get(), nullptr);
+
+	// start_ms > end_ms should also error
+	raw_output = nullptr;
+	raw_err = nullptr;
+	rv = lotman_get_max_mpas_for_period(200, 100, false, &raw_output, &raw_err);
+	output.reset(raw_output);
+	err_msg.reset(raw_err);
+	EXPECT_NE(rv, 0);
+	EXPECT_NE(err_msg.get(), nullptr);
+}
+
+// Test: No lots overlap the period (should return zeros)
+TEST_F(LotManTest, MaxMPAsForPeriod_NoOverlappingLots) {
+	addDefaultLot();
+
+	const char *lot = R"({
+		"lot_name": "testlot1",
+		"owner": "owner1",
+		"parents": ["testlot1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 10.0,
+			"opportunistic_GB": 5.0,
+			"max_num_objects": 1000,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+	addLot(lot);
+
+	// Query period that doesn't overlap with any lot
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(400, 500, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 0.0);
+	EXPECT_DOUBLE_EQ(result["max_opportunistic_GB"], 0.0);
+	EXPECT_DOUBLE_EQ(result["max_combined_GB"], 0.0);
+	EXPECT_EQ(result["max_num_objects"], 0);
+}
+
+// Test: Simultaneous events (lots created/expired at same time)
+TEST_F(LotManTest, MaxMPAsForPeriod_SimultaneousEvents) {
+	addDefaultLot();
+
+	// Two lots with identical creation times
+	const char *testlot1 = R"({
+		"lot_name": "testlot1",
+		"owner": "owner1",
+		"parents": ["testlot1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 10.0,
+			"opportunistic_GB": 5.0,
+			"max_num_objects": 1000,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+
+	const char *testlot2 = R"({
+		"lot_name": "testlot2",
+		"owner": "owner1",
+		"parents": ["testlot2"],
+		"management_policy_attrs": {
+			"dedicated_GB": 8.0,
+			"opportunistic_GB": 3.0,
+			"max_num_objects": 500,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+
+	addLot(testlot1);
+	addLot(testlot2);
+
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(100, 200, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+	// Both lots should be counted together
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 18.0);	   // 10 + 8
+	EXPECT_DOUBLE_EQ(result["max_opportunistic_GB"], 8.0); // 5 + 3
+	EXPECT_DOUBLE_EQ(result["max_combined_GB"], 26.0);	   // 18 + 8
+	EXPECT_EQ(result["max_num_objects"], 1500);			   // 1000 + 500
+}
+
+// Test: Lot hierarchies should only count root lots, not children
+TEST_F(LotManTest, MaxMPAsForPeriod_LotHierarchy) {
+	addDefaultLot();
+
+	// Create parent lot (root) with 5GB dedicated
+	const char *parent_lot = R"({
+		"lot_name": "parent_lot",
+		"owner": "owner1",
+		"parents": ["parent_lot"],
+		"management_policy_attrs": {
+			"dedicated_GB": 5.0,
+			"opportunistic_GB": 2.0,
+			"max_num_objects": 1000,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+
+	// Create child lot with 3GB dedicated (child of parent_lot)
+	const char *child_lot = R"({
+		"lot_name": "child_lot",
+		"owner": "owner1",
+		"parents": ["parent_lot"],
+		"management_policy_attrs": {
+			"dedicated_GB": 3.0,
+			"opportunistic_GB": 1.0,
+			"max_num_objects": 500,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+
+	addLot(parent_lot);
+	addLot(child_lot);
+
+	// Query during overlap period
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(100, 200, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+
+	// Should only count the parent lot (5GB), not parent + child (8GB)
+	// Child's allocation counts toward parent's quota
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 5.0) << "Should only count root lot, not child";
+	EXPECT_DOUBLE_EQ(result["max_opportunistic_GB"], 2.0);
+	EXPECT_DOUBLE_EQ(result["max_combined_GB"], 7.0); // 5 + 2
+	EXPECT_EQ(result["max_num_objects"], 1000);
+}
+
+// Test: Multiple independent root lots should be summed
+TEST_F(LotManTest, MaxMPAsForPeriod_MultipleRoots) {
+	addDefaultLot();
+
+	// Create first root lot with 5GB
+	const char *root1 = R"({
+		"lot_name": "root1",
+		"owner": "owner1",
+		"parents": ["root1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 5.0,
+			"opportunistic_GB": 2.0,
+			"max_num_objects": 1000,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+
+	// Create second root lot with 8GB
+	const char *root2 = R"({
+		"lot_name": "root2",
+		"owner": "owner1",
+		"parents": ["root2"],
+		"management_policy_attrs": {
+			"dedicated_GB": 8.0,
+			"opportunistic_GB": 3.0,
+			"max_num_objects": 2000,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+
+	// Create child of root1 with 3GB
+	const char *child1 = R"({
+		"lot_name": "child1",
+		"owner": "owner1",
+		"parents": ["root1"],
+		"management_policy_attrs": {
+			"dedicated_GB": 3.0,
+			"opportunistic_GB": 1.0,
+			"max_num_objects": 500,
+			"creation_time": 100,
+			"expiration_time": 200,
+			"deletion_time": 300
+		}
+	})";
+
+	addLot(root1);
+	addLot(root2);
+	addLot(child1);
+
+	// Query during overlap period
+	char *raw_output = nullptr;
+	char *raw_err = nullptr;
+	int rv = lotman_get_max_mpas_for_period(100, 200, false, &raw_output, &raw_err);
+	UniqueCString output(raw_output);
+	UniqueCString err_msg(raw_err);
+	ASSERT_EQ(rv, 0) << err_msg.get();
+
+	json result = json::parse(output.get());
+
+	// Should count both root lots (5 + 8 = 13GB), but not the child
+	EXPECT_DOUBLE_EQ(result["max_dedicated_GB"], 13.0) << "Should count both roots but not child";
+	EXPECT_DOUBLE_EQ(result["max_opportunistic_GB"], 5.0); // 2 + 3
+	EXPECT_DOUBLE_EQ(result["max_combined_GB"], 18.0);	   // 13 + 5
+	EXPECT_EQ(result["max_num_objects"], 3000);			   // 1000 + 2000
+}
+
 } // namespace
 
 int main(int argc, char **argv) {

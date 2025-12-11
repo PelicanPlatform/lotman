@@ -424,4 +424,42 @@ class Checks {
 														   // a parent/child, which should update data for the child
 	static bool will_be_orphaned(const std::string &LTBR, const std::string &child);
 };
+
+/**
+ * Result structure for maximum MPA queries.
+ */
+struct MaxMPAResult {
+	double max_dedicated_GB;
+	double max_opportunistic_GB;
+	double max_combined_GB;
+	int64_t max_num_objects;
+};
+
+/**
+ * Calculate maximum Management Policy Attributes (MPAs) during a time period using sweep line algorithm.
+ *
+ * This function implements a sweep line algorithm to efficiently find the maximum resource usage
+ * across all overlapping lots during a specified time period. The algorithm is based on the
+ * classic interval scheduling problem solution described at:
+ * https://www.geeksforgeeks.org/maximum-number-of-overlapping-intervals/
+ *
+ * Time Complexity: O(n log n) where n is the number of lots overlapping the query period
+ * Space Complexity: O(n) for the event list
+ *
+ * IMPORTANT: Lot lifetimes are treated as INCLUSIVE intervals [creation_time, end_time].
+ * A lot is considered active at both its creation_time and its end_time (expiration or deletion).
+ * This means a lot with creation_time=100 and expiration_time=200 is active during the entire
+ * range [100, 200], including both endpoints.
+ *
+ * @param start_ms Start of the query period in milliseconds since Unix epoch (inclusive)
+ * @param end_ms End of the query period in milliseconds since Unix epoch (inclusive)
+ * @param include_deletion If true, use deletion_time as lot end; if false, use expiration_time
+ * @return A pair containing:
+ *         - first: MaxMPAResult struct with all maximum values
+ *         - second: Error message string (empty on success, descriptive message on error)
+ *         On error, all numeric values in the result struct are set to 0.
+ */
+std::pair<MaxMPAResult, std::string> get_max_mpas_for_period_internal(int64_t start_ms, int64_t end_ms,
+																	  bool include_deletion);
+
 } // namespace lotman

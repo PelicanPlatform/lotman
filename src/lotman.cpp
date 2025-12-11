@@ -1718,3 +1718,40 @@ int lotman_get_context_int(const char *key, int *output, char **err_msg) {
 		return -1;
 	}
 }
+
+int lotman_get_max_mpas_for_period(int64_t start_ms, int64_t end_ms, bool include_deletion, char **output,
+								   char **err_msg) {
+	try {
+		// Call internal function
+		auto [result, error] = lotman::get_max_mpas_for_period_internal(start_ms, end_ms, include_deletion);
+
+		// Check for errors from internal function
+		if (!error.empty()) {
+			if (err_msg) {
+				*err_msg = strdup(error.c_str());
+			}
+			return -1;
+		}
+
+		// Build output JSON
+		json output_obj;
+		output_obj["start_ms"] = start_ms;
+		output_obj["end_ms"] = end_ms;
+		output_obj["include_deletion"] = include_deletion;
+		output_obj["max_dedicated_GB"] = result.max_dedicated_GB;
+		output_obj["max_opportunistic_GB"] = result.max_opportunistic_GB;
+		output_obj["max_combined_GB"] = result.max_combined_GB;
+		output_obj["max_num_objects"] = result.max_num_objects;
+
+		// Convert to string and allocate output
+		std::string output_str = output_obj.dump();
+		*output = strdup(output_str.c_str());
+
+		return 0;
+	} catch (std::exception &exc) {
+		if (err_msg) {
+			*err_msg = strdup(exc.what());
+		}
+		return -1;
+	}
+}

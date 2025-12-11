@@ -2182,6 +2182,153 @@ bool lotman::Checks::will_be_orphaned(const std::string &LTBR, const std::string
 	return false;
 }
 
+/**
+ * Implementation of sweep line algorithm for finding maximum MPAs during a time period.
+ *
+ * This implements the classic sweep line algorithm for interval scheduling problems.
+ * See: https://www.geeksforgeeks.org/maximum-number-of-overlapping-intervals/
+ *
+ * The algorithm works by:
+ * 1. Creating "events" for each lot's start (creation) and end (expiration/deletion)
+ * 2. Sorting all events by time
+ * 3. Sweeping through events chronologically, tracking current resource usage with deltas
+ *    that correspond to each event's attributes
+ * 4. Recording the maximum usage observed at any point
+ *
+ * Key semantic: Lot lifetimes are INCLUSIVE intervals [creation_time, end_time].
+ * A lot is active at both its start and end timestamps. Therefore, we schedule
+ * removal events at end_time + 1 (the first moment the lot is no longer active).
+ */
+
+std::pair<lotman::MaxMPAResult, std::string> lotman::get_max_mpas_for_period_internal(int64_t start_ms, int64_t end_ms,
+																					  bool include_deletion) {
+	// Validate input
+	if (start_ms >= end_ms) {
+		return {{0.0, 0.0, 0.0, 0}, "Error: start_ms must be less than end_ms"};
+	}
+
+	auto &storage = lotman::db::StorageManager::get_storage();
+
+	// Determine which time field to use for lot end time
+	using MPA = lotman::db::ManagementPolicyAttributes;
+	using Parent = lotman::db::Parent;
+	using namespace sqlite_orm;
+
+	// Query lots that overlap with the period, filtering to only ROOT lots.
+	//
+	// IMPORTANT: We only count root lots (self-parent lots) to avoid double-counting in hierarchies.
+	// A root lot is one where the lot has only itself as a parent in the parents table.
+	// Child lots consume quota from their parents, so counting both would be incorrect.
+	//
+	// For example, if parent_lot has 5GB and child_lot (child of parent_lot) has 3GB,
+	// the maximum capacity usage should be 5GB (from the parent), not 8GB (parent + child).
+	//
+	// Overlap condition for inclusive intervals: creation_time <= end_ms AND end_time >= start_ms
+	// This correctly handles all overlap cases including point-in-time overlaps at boundaries.
+	//
+	// Root lot condition: EXISTS exactly one parent record WHERE parent = lot_name
+	// We use a SQL subquery to identify root lots directly in the database for optimal performance.
+	std::string time_field = include_deletion ? "deletion_time" : "expiration_time";
+	std::string query = "SELECT mpa.lot_name, mpa.dedicated_GB, mpa.opportunistic_GB, mpa.max_num_objects, "
+						"       mpa.creation_time, mpa." +
+						time_field +
+						" "
+						"FROM management_policy_attributes mpa "
+						"WHERE mpa.creation_time <= ? AND mpa." +
+						time_field +
+						" >= ? "
+						"  AND mpa.lot_name IN ( "
+						"    SELECT p.lot_name "
+						"    FROM parents p "
+						"    WHERE p.lot_name = p.parent "
+						"    GROUP BY p.lot_name "
+						"    HAVING COUNT(*) = 1 "
+						"  )";
+
+	std::map<int64_t, std::vector<int>> query_int_map{{end_ms, {1}}, {start_ms, {2}}};
+	auto rp = lotman::db::SQL_get_matches_multi_col(query, 6, std::map<std::string, std::vector<int>>(), query_int_map);
+
+	if (!rp.second.empty()) {
+		return {{0.0, 0.0, 0.0, 0}, "Database query failed: " + rp.second};
+	}
+
+	auto &lots = rp.first;
+
+	// If no root lots overlap, return zeros with no error
+	if (lots.empty()) {
+		return {{0.0, 0.0, 0.0, 0}, ""};
+	}
+
+	// Event structure for sweep line algorithm
+	struct Event {
+		int64_t time;
+		double ded_delta;  // Change in dedicated storage
+		double opp_delta;  // Change in opportunistic storage
+		int64_t obj_delta; // Change in object count
+		bool is_start;	   // true for creation event, false for expiration/deletion event
+	};
+
+	std::vector<Event> events;
+	events.reserve(lots.size() * 2); // Each lot creates at most 2 events
+
+	// Build event list from query results
+	// Each row contains: [lot_name, dedicated_GB, opportunistic_GB, max_num_objects, creation_time, end_time]
+	for (const auto &lot_row : lots) {
+		// Parse query results from string vector (columns 0-5)
+		// lot_row[0] = lot_name (string, not used in sweep line)
+		double dedicated = std::stod(lot_row[1]);	  // dedicated_GB
+		double opportunistic = std::stod(lot_row[2]); // opportunistic_GB
+		int64_t objects = std::stoll(lot_row[3]);	  // max_num_objects
+		int64_t creation = std::stoll(lot_row[4]);	  // creation_time
+		int64_t end_time = std::stoll(lot_row[5]);	  // expiration_time or deletion_time
+
+		// Clamp lot start to query range (if lot starts before start_ms, treat as starting at start_ms)
+		int64_t effective_start = std::max(start_ms, creation);
+
+		// Add creation/start event at the lot's effective start time
+		events.push_back({effective_start, dedicated, opportunistic, objects, true});
+
+		// Add expiration/deletion event AFTER the lot ends (since lot is active through end_time inclusive)
+		// Only add if the lot ends before the query period ends
+		if (end_time < end_ms) {
+			// Schedule removal at end_time + 1 (first moment lot is no longer active)
+			events.push_back({end_time + 1, -dedicated, -opportunistic, -objects, false});
+		}
+		// If end_time >= end_ms, the lot extends beyond our query range, so no removal event needed
+	}
+
+	// Sort events chronologically, with start events before end events at the same timestamp
+	std::sort(events.begin(), events.end(), [](const Event &a, const Event &b) {
+		if (a.time != b.time) {
+			return a.time < b.time;
+		}
+		// At same time, process starts before ends (true sorts before false)
+		// This ensures we correctly handle simultaneous creation/expiration events
+		return a.is_start > b.is_start;
+	});
+
+	// Sweep through events chronologically, tracking current and maximum resource usage
+	double current_ded = 0.0, current_opp = 0.0, current_combined = 0.0;
+	double max_ded = 0.0, max_opp = 0.0, max_combined = 0.0;
+	int64_t current_obj = 0, max_obj = 0;
+
+	for (const auto &event : events) {
+		// Update current resource usage based on event deltas
+		current_ded += event.ded_delta;
+		current_opp += event.opp_delta;
+		current_obj += event.obj_delta;
+		current_combined = current_ded + current_opp;
+
+		// Track the maximum values observed at any point
+		max_ded = std::max(max_ded, current_ded);
+		max_opp = std::max(max_opp, current_opp);
+		max_combined = std::max(max_combined, current_combined);
+		max_obj = std::max(max_obj, current_obj);
+	}
+
+	return {{max_ded, max_opp, max_combined, max_obj}, ""};
+}
+
 void lotman::Context::set_caller(const std::string caller) {
 	m_caller = std::make_shared<std::string>(caller);
 }

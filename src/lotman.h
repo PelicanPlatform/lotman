@@ -936,6 +936,72 @@ int lotman_get_context_int(const char *key, int *output, char **err_msg);
 		A reference to a char array that can store any error messages.
 */
 
+int lotman_get_max_mpas_for_period(int64_t start_ms, int64_t end_ms, bool include_deletion, char **output,
+								   char **err_msg);
+/**
+	DESCRIPTION: A function for determining the maximum summed Management Policy Attributes (MPAs)
+		across all overlapping lots during a specified time period. This function uses a sweep line
+		algorithm to efficiently calculate the peak resource allocation at any point during the period.
+		This is useful for capacity planning and scheduling systems that need to determine available
+		space for new lot allocations, e.g. "Can I create a lot with 50GB dedicated storage from time
+		A to time B without overcommitting resources?"
+
+	RETURNS: Returns 0 on success. Any other values indicate an error.
+
+	INPUTS:
+	start_ms:
+		A Unix timestamp in milliseconds indicating the start of the query period (inclusive).
+
+	end_ms:
+		A Unix timestamp in milliseconds indicating the end of the query period (inclusive).
+		Must be greater than start_ms or the function will return an error.
+
+	include_deletion:
+		A boolean indicating which lot endpoint to consider:
+		- When false: lots are considered active until their expiration_time
+		- When true: lots are considered active until their deletion_time
+		For most capacity planning scenarios, false is recommended since expired lots may still
+		consume resources even if they become opportunistic.
+
+	output:
+		A reference to a char * that will be allocated and populated with a JSON string containing
+		the results. The caller is responsible for freeing this memory.
+
+	err_msg:
+		A reference to a char array that can store any error messages.
+
+	Output JSON Specification:
+		The output JSON contains both the query parameters (for logging/debugging) and the results:
+{
+	"start_ms": <input start_ms value, in unix milliseconds>,
+	"end_ms": <input end_ms value, in unix milliseconds>,
+	"include_deletion": <input include_deletion value>,
+	"max_dedicated_GB": <maximum sum of dedicated_GB at any point during the period>,
+	"max_opportunistic_GB": <maximum sum of opportunistic_GB at any point during the period>,
+	"max_combined_GB": <maximum sum of (dedicated_GB + opportunistic_GB) at any point during the period>,
+	"max_num_objects": <maximum sum of max_num_objects at any point during the period>
+}
+
+	Notes:
+	- max_dedicated_GB represents the maximum cumulative storage Lotman has dedicated to lots during the
+	  specified period
+	- max_combined_GB sums over both opportunistic and dedicated storage, representing the total maximum storage
+	  Lotman has allocated to lots during the specified period
+	- max_opportunistic_GB and max_combined_GB may be produced by different sets of overlapping lots
+	- If no lots overlap the specified period, all maximum values will be 0.0
+
+	Example:
+		If the query period contains three overlapping lots:
+		- Lot A: 10GB dedicated, 5GB opportunistic
+		- Lot B: 8GB dedicated, 0GB opportunistic
+		- Lot C: 7GB dedicated, 3GB opportunistic
+
+		When all three overlap in time with the overall query interval:
+		- max_dedicated_GB = 25.0 (10 + 8 + 7)
+		- max_opportunistic_GB = 8.0 (5 + 0 + 3)
+		- max_combined_GB = 33.0 (25 + 8, the sum of total dedicated plus total opportunistic)
+*/
+
 // int lotman_get_matching_lots(const char *criteria_JSON, char ***output, char **err_msg);
 // int lotman_check_db_health(char **err_msg); // Should eventually check that data structure conforms to expectations.
 // If there's a cycle or a non-self-parent root, something is wrong
