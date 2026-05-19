@@ -1696,7 +1696,7 @@ TEST_F(LotManTest, GetVersionTest) {
 	const char *version = lotman_version();
 	std::string version_cpp(version);
 
-	EXPECT_EQ(version_cpp, "v0.0.1");
+	EXPECT_EQ(version_cpp, "v0.1.0");
 }
 
 TEST_F(LotManTest, IsRootTest) {
