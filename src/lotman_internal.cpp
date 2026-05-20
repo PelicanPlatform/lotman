@@ -2099,7 +2099,7 @@ std::pair<bool, std::string> lotman::Lot::update_self_usage(const std::string &k
 
 		if (std::find(allowed_int_keys.begin(), allowed_int_keys.end(), key) != allowed_int_keys.end()) {
 			int current_usage = std::stoi(rp_vec_str.first[0]);
-			int delta = value - current_usage;
+			(void)current_usage; // currently unused; retained for future parent-usage propagation (see TODO below)
 
 			// Update lot proper
 			std::map<int64_t, std::vector<int>> update_usage_int_map = {{value, {1}}};
@@ -2147,7 +2147,7 @@ std::pair<bool, std::string> lotman::Lot::update_self_usage(const std::string &k
 		} else if (std::find(allowed_double_keys.begin(), allowed_double_keys.end(), key) !=
 				   allowed_double_keys.end()) {
 			double current_usage = std::stod(rp_vec_str.first[0]);
-			double delta = value - current_usage;
+			(void)current_usage; // currently unused; retained for future parent-usage propagation (see TODO above)
 
 			// Update lot proper
 			std::map<std::string, std::vector<int>> update_usage_str_map = {{lot_name, {2}}};
@@ -2265,7 +2265,7 @@ std::pair<bool, std::string> lotman::Lot::recalculate_children_usage() {
 								"AND lu.lot_name IN (";
 
 		// For each child we need to update both the query and the str map
-		for (int i = 0; i < recursive_children.size(); i++) {
+		for (size_t i = 0; i < recursive_children.size(); i++) {
 			// Update the query
 			sum_query += "?";
 			if (i != recursive_children.size() - 1) {
@@ -2273,7 +2273,7 @@ std::pair<bool, std::string> lotman::Lot::recalculate_children_usage() {
 			}
 
 			// Update the str map
-			sum_str_map[recursive_children[i].lot_name] = {i + 1};
+			sum_str_map[recursive_children[i].lot_name] = {static_cast<int>(i + 1)};
 		}
 		sum_query += ");";
 
@@ -2630,7 +2630,7 @@ std::pair<std::vector<std::string>, std::string> lotman::Lot::get_lots_past_opp(
 
 	if (recursive_children) { // Get all children of the lots past opp
 		std::vector<std::string> tmp;
-		for (const auto lot_past_opp : lots_past_opp) {
+		for (const auto &lot_past_opp : lots_past_opp) {
 			Lot _lot(lot_past_opp);
 			auto rp_lotvec_str = _lot.get_children(true);
 			if (!rp_lotvec_str.second.empty()) { // There was an error
@@ -2707,7 +2707,7 @@ std::pair<std::vector<std::string>, std::string> lotman::Lot::get_lots_past_ded(
 
 	if (recursive_children) { // Get all children of the lots past opp
 		std::vector<std::string> tmp;
-		for (const auto lot_past_ded : lots_past_ded) {
+		for (const auto &lot_past_ded : lots_past_ded) {
 			Lot _lot(lot_past_ded);
 			auto rp_lotvec_str = _lot.get_children(true);
 			if (!rp_lotvec_str.second.empty()) { // There was an error
@@ -2783,7 +2783,7 @@ std::pair<std::vector<std::string>, std::string> lotman::Lot::get_lots_past_obj(
 
 	if (recursive_children) { // Get all children of the lots past opp
 		std::vector<std::string> tmp;
-		for (const auto lot_past_obj : lots_past_obj) {
+		for (const auto &lot_past_obj : lots_past_obj) {
 			Lot _lot(lot_past_obj);
 			auto rp_lotvec_str = _lot.get_children(true);
 			if (!rp_lotvec_str.second.empty()) { // There was an error

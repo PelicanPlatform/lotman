@@ -56,12 +56,16 @@ cd build
 cd build
 %make_install
 
+# Strip artifacts installed by the bundled sqlite_orm FetchContent dependency.
+# Those headers and CMake config files are an implementation detail of the
+# LotMan build and should not be exposed as part of the lotman RPM.
+rm -rf %{buildroot}%{_includedir}/sqlite_orm
+rm -rf %{buildroot}%{_libdir}/cmake/SqliteOrm
+
 %files
 %license LICENSE
 %doc README.md
-#%{_libdir}/libLotMan.so.0*
 %{_libdir}/libLotMan.so
-#%{_bindir}/lotman-*
 %{_includedir}/lotman/lotman.h
 %dir %{_includedir}/lotman
 
