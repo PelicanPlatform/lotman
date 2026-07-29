@@ -1,0 +1,65 @@
+name: Lint
+
+# Linter Action documentation at https://github.com/marketplace/actions/lint-action
+# Reviewdog suggester documentation at https://github.com/reviewdog/action-suggester
+
+# On pull requests, this workflow runs clang-format, applies fixes locally (without
+# committing), and then uses reviewdog/action-suggester to post the diffs as inline
+# GitHub review suggestions that authors can apply with one click.
+#
+# On pushes to main there is no PR to comment on, so the workflow runs the linter
+# only as a check (no suggestions are posted).
+#
+# The linter does not have authorization to lint any code in the repo's
+# .github/workflows/ directory.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  run-linters:
+    name: Run linters
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Install ClangFormat
+        run: |
+          # Install clang-format 19 to match pre-commit version
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -y clang-format-19
+          sudo ln -sf /usr/bin/clang-format-19 /usr/bin/clang-format
+
+      - name: Run linters
+        # auto_fix + commit:false applies fixes to the working tree without committing,
+        # leaving a git diff that reviewdog/action-suggester can read below.
+        uses: wearerequired/lint-action@v3.0.2
+        with:
+          clang_format: true
+          # clang_format_auto_fix: true
+          # auto_fix: true
+          # commit: false
+          continue_on_error: true
+          # ^^ can't post suggestions if we error out
+          clang_format_args: -style=file
+
+      - name: Post lint suggestions as PR review
+        # Only runs on pull_request events; push to main has no PR to comment on.
+        if: github.event_name == 'pull_request'
+        uses: reviewdog/action-suggester@v1
+        with:
+          tool_name: lint

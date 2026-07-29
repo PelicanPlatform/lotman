@@ -1,0 +1,23 @@
+name: Clang Format
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-clang-format:
+    name: Run clang-format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Run Clang Format
+        uses: RafikFarhad/clang-format-github-action@v6
+        with:
+          sources: "src/*.cpp,src/*.h,test/*.cpp,test/*.h"
