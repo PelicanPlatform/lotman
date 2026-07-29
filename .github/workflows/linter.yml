@@ -50,10 +50,11 @@ jobs:
         uses: wearerequired/lint-action@v3.0.2
         with:
           clang_format: true
-          clang_format_auto_fix: true
-          auto_fix: true
-          commit: false
-          continue_on_error: false
+          # clang_format_auto_fix: true
+          # auto_fix: true
+          # commit: false
+          continue_on_error: true
+          # ^^ can't post suggestions if we error out
           clang_format_args: -style=file
 
       - name: Post lint suggestions as PR review
