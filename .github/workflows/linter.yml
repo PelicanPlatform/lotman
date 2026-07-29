@@ -47,7 +47,7 @@ jobs:
       - name: Run linters
         # auto_fix + commit:false applies fixes to the working tree without committing,
         # leaving a git diff that reviewdog/action-suggester can read below.
-        uses: wearerequired/lint-action@v2
+        uses: wearerequired/lint-action@v3.0.2
         with:
           clang_format: true
           clang_format_auto_fix: true
