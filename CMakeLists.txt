@@ -12,15 +12,6 @@ option(LOTMAN_EXTERNAL_GTEST "Use an external/pre-installed copy of GTest" OFF)
 
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 
-# Fetch sqlite_orm
-include(FetchContent)
-FetchContent_Declare(
-    sqlite_orm
-    GIT_REPOSITORY https://github.com/fnc12/sqlite_orm.git
-    GIT_TAG v1.8.2
-)
-FetchContent_MakeAvailable(sqlite_orm)
-
 set(CMAKE_BUILD_TYPE RelWithDebInfo) # -g -O2
 
 include(GNUInstallDirs)
@@ -41,6 +32,21 @@ elseif(UNIX)
   find_package(nlohmann_json REQUIRED)
   find_package(nlohmann_json_schema_validator REQUIRED)
 endif()
+
+# Get sqlite_orm; try an installed package first.
+find_package(SqliteOrm QUIET CONFIG)
+if(NOT SqliteOrm_FOUND)
+  message(STATUS "SqliteOrm not found, fetching from Git via FetchContent")
+
+  include(FetchContent)
+  FetchContent_Declare(
+      sqlite_orm
+      GIT_REPOSITORY https://github.com/fnc12/sqlite_orm.git
+      GIT_TAG v1.8.2
+  )
+  FetchContent_MakeAvailable(sqlite_orm)
+endif()
+
 
 add_library(LotMan SHARED src/lotman.cpp src/lotman_db.cpp src/lotman_internal.cpp)
 target_compile_features(LotMan PUBLIC cxx_std_17)
