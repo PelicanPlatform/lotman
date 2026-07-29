@@ -20,7 +20,7 @@ namespace {
 struct SweepEvent {
 	int64_t time;
 	double delta_ded;
-	double delta_opp;
+            double delta_opp;
 	double delta_obj;
 	bool is_start; // true=addition, false=removal (used for tie-breaking)
 };
@@ -78,7 +78,7 @@ std::vector<SweepEvent> build_attribution_events(const std::string &parent_lot_n
 	// Compute "now" once for reclamation filtering. A child whose reclamation
 	// row's reclaimed_at <= now is treated as if it no longer holds capacity
 	// (its accounting tie has been severed by the storage provider).
-	auto now_tp = std::chrono::system_clock::now();
+auto now_tp = std::chrono::system_clock::now();
 	int64_t now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now_tp).time_since_epoch().count();
 
 	// Get all children of this parent (non-self)
